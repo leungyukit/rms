@@ -1,0 +1,182 @@
+# k8s.yaml - Kubernetes deployment for RMS + OpenClaw All-in-One
+# 使用方法：
+#   kubectl apply -f k8s.yaml
+#
+# 或创建命名空间后部署：
+#   kubectl create namespace rms
+#   kubectl apply -f k8s.yaml -n rms
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rms-mysql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rms-uploads-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rms-openclaw
+  labels:
+    app: rms-openclaw
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rms-openclaw
+  template:
+    metadata:
+      labels:
+        app: rms-openclaw
+    spec:
+      containers:
+        - name: rms-allinone
+          image: rms-openclaw:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3800
+              name: rms-web
+            - containerPort: 18789
+              name: openclaw-gw
+            - containerPort: 3306
+              name: mysql
+            - containerPort: 11211
+              name: memcached
+          env:
+            - name: MYSQL_USER
+              value: "rms"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: mysql-password
+            - name: MYSQL_DATABASE
+              value: "rms"
+            - name: OPENCLAW_ENABLED
+              value: "true"
+            - name: FEISHU_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: feishu-app-id
+            - name: FEISHU_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: feishu-app-secret
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: rms-uploads
+              mountPath: /app/rms/public/uploads
+            - name: openclaw-data
+              mountPath: /app/openclaw
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: 3800
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: 3800
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: rms-mysql-pvc
+        - name: rms-uploads
+          persistentVolumeClaim:
+            claimName: rms-uploads-pvc
+        - name: openclaw-data
+          persistentVolumeClaim:
+            claimName: openclaw-data-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rms-openclaw-service
+spec:
+  type: NodePort
+  selector:
+    app: rms-openclaw
+  ports:
+    - name: rms-web
+      port: 3800
+      targetPort: 3800
+      nodePort: 30800
+    - name: openclaw-gw
+      port: 18789
+      targetPort: 18789
+      nodePort: 31878
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      nodePort: 30306
+    - name: memcached
+      port: 11211
+      targetPort: 11211
+      nodePort: 31211
+
+---
+# Optional: Create secrets with your actual values
+# kubectl create secret generic rms-secrets \
+#   --from-literal=mysql-password=rms123456 \
+#   --from-literal=feishu-app-id=your_app_id \
+#   --from-literal=feishu-app-secret=your_app_secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rms-secrets
+type: Opaque
+stringData:
+  mysql-password: "rms123456"
+  feishu-app-id: ""
+  feishu-app-secret: ""

@@ -1,0 +1,80 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
+
+const STATUS_COLORS: Record<string, string> = {
+  received_not_evaluated: '#9CA3AF', evaluated_not_scheduled: '#F59E0B',
+  scheduled: '#3B82F6', in_progress: '#8B5CF6', completed: '#10B981',
+  verified: '#06B6D4', closed: '#6B7280',
+};
+const PRIORITY_DOT: Record<string, string> = { high: '🔴', medium: '🟡', low: '🟢' };
+
+type ViewMode = 'week' | 'month' | 'day';
+
+function fmt(d: Date) { return d.toISOString().split('T')[0]; }
+function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function startOfWeek(d: Date) { const r = new Date(d); r.setDate(r.getDate() - ((r.getDay() + 6) % 7)); return r; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+export default function CalendarPage() {
+  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [baseDate, setBaseDate] = useState(() => new Date());
+  const [handlers, setHandlers] = useState<any[]>([]);
+  const [requirements, setRequirements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedReq, setSelectedReq] = useState<any>(null);
+  const [filterHandler, setFilterHandler] = useState('');
+
+  const { startDate, endDate, days } = useMemo(() => {
+    let s: Date, e: Date;
+    if (viewMode === 'week') { s = startOfWeek(baseDate); e = addDays(s, 6); }
+    else if (viewMode === 'month') { s = startOfMonth(baseDate); e = endOfMonth(baseDate); }
+    else { s = new Date(baseDate); e = new Date(baseDate); }
+    const days: Date[] = [];
+    let cur = new Date(s);
+    while (cur <= e) { days.push(new Date(cur)); cur = addDays(cur, 1); }
+    return { startDate: s, endDate: e, days };
+  }, [viewMode, baseDate]);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ start: fmt(startDate), end: fmt(endDate) });
+    if (filterHandler) params.set('handler_id', filterHandler);
+    fetch(`/api/calendar?${params}`)
+      .then(r => r.json())
+      .then(d => { setHandlers(d.handlers || []); setRequirements(d.requirements || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [startDate, endDate, filterHandler]);
+
+  const reqOnDate = (req: any, date: string) => req.planned_start <= date && req.planned_end >= date;
+  const getReqs = (handlerId: number, date: string) =>
+    requirements.filter(r => r.handler_id === handlerId && reqOnDate(r, date));
+
+  const nav = (dir: number) => {
+    if (viewMode === 'week') setBaseDate(prev => addDays(prev, dir * 7));
+    else if (viewMode === 'month') setBaseDate(prev => { const n = new Date(prev); n.setMonth(n.getMonth() + dir); return n; });
+    else setBaseDate(prev => addDays(prev, dir));
+  };
+
+  const today = fmt(new Date());
+  const displayHandlers = filterHandler ? handlers.filter(h => String(h.id) === filterHandler) : handlers;
+
+  const dateLabel = viewMode === 'week'
+    ? `${fmt(startDate)} ~ ${fmt(endDate)}`
+    : viewMode === 'month' ? `${baseDate.getFullYear()}年${baseDate.getMonth() + 1}月` : fmt(baseDate);
+
+  return (
+    <div className="p-6 h-[calc(100vh-64px)] flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-xl font-bold">📆 工作日历</h1>
+          <p className="text-sm text-gray-500 mt-0.5">按人员查看需求处理计划安排</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <select value={filterHandler} onChange={e => setFilterHandler(e.target.value)} className="form-input">
+            <option value="">全部人员</option>
+            {handlers.map(h => <option key={h.id} value={h.id}>{h.display_name}</option>)}
+          </select>

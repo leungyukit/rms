@@ -1,0 +1,199 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getAsyncDb, isMysqlEnabled } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth';
+import { ensureFtsIndexes, highlight, escapeFts } from '@/lib/fts-migrations';
+
+export const dynamic = 'force-dynamic';
+
+interface Hit { type: string; id: number; title: string; snippet: string; score: number; [k: string]: any; }
+
+export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  ensureFtsIndexes();
+
+  const sp = req.nextUrl.searchParams;
+  const q = (sp.get('q') || sp.get('keyword') || '').trim();
+  const type = sp.get('type') || 'all'; // requirements,knowledge,projects,all
+  const limit = Math.min(50, parseInt(sp.get('limit') || '20'));
+
+  if (!q) return NextResponse.json({ error: '请输入至少 1 个字符' }, { status: 400 });
+  if (q.length < 1) return NextResponse.json({ error: '请输入至少 1 个字符' }, { status: 400 });
+
+  const t0 = Date.now();
+  const db = getAsyncDb();
+  const isMysql = isMysqlEnabled();
+  const results: Hit[] = [];
+  const facets: Record<string, Record<string, number>> = { type: {} };
+
+  const safeQ = escapeFts(q);
+  const likeQ = `%${q}%`;
+
+  // 需求搜索
+  if (type === 'all' || type === 'requirements') {
+    let rows: any[] = [];
+    if (isMysql) {
+      // MySQL FULLTEXT（ngram 模式自动按 2 字切分）
+      try {
+        rows = (await db.prepare(`
+          SELECT r.id, r.title, r.status, r.priority, r.description,
+            p.name as project_name, MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN NATURAL LANGUAGE MODE) as score
+          FROM requirements r
+          LEFT JOIN projects p ON p.id = r.project_id
+          WHERE MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN NATURAL LANGUAGE MODE)
+            AND r.merged_into IS NULL
+          ORDER BY score DESC
+          LIMIT ?
+        `).all(q, q, limit)) as any[];
+      } catch (e) {
+        // 兜底 LIKE
+        rows = (await db.prepare(`
+          SELECT r.id, r.title, r.status, r.priority, r.description, p.name as project_name, 1 as score
+          FROM requirements r LEFT JOIN projects p ON p.id=r.project_id
+          WHERE (r.title LIKE ? OR r.description LIKE ? OR r.business_unit LIKE ?)
+            AND r.merged_into IS NULL
+          ORDER BY r.updated_at DESC LIMIT ?
+        `).all(likeQ, likeQ, likeQ, limit)) as any[];
+      }
+    } else {
+      // SQLite FTS5
+      try {
+        rows = (await db.prepare(`
+          SELECT r.id, r.title, r.status, r.priority, r.description, p.name as project_name, rank
+          FROM requirements_fts fts
+          JOIN requirements r ON r.id = fts.rowid
+          LEFT JOIN projects p ON p.id = r.project_id
+          WHERE requirements_fts MATCH ? AND r.merged_into IS NULL
+          ORDER BY rank LIMIT ?
+        `).all(safeQ, limit)) as any[];
+        // rank 越小越相关；转换为 0-1 score
+        for (const r of rows) r.score = 1 / (1 + Math.abs(r.rank));
+      } catch (e) {
+        rows = (await db.prepare(`
+          SELECT r.id, r.title, r.status, r.priority, r.description, p.name as project_name, 1 as score
+          FROM requirements r LEFT JOIN projects p ON p.id=r.project_id
+          WHERE (r.title LIKE ? OR r.description LIKE ?) AND r.merged_into IS NULL
+          ORDER BY r.updated_at DESC LIMIT ?
+        `).all(likeQ, likeQ, limit)) as any[];
+      }
+    }
+    for (const r of rows.slice(0, limit)) {
+      results.push({
+        type: 'requirement',
+        id: r.id,
+        title: r.title,
+        snippet: highlight(r.description || r.title, q),
+        score: r.score || 0.5,
+        status: r.status,
+        priority: r.priority,
+        project_name: r.project_name,
+      });
+      facets.type.requirement = (facets.type.requirement || 0) + 1;
+    }
+  }
+
+  // 知识搜索
+  if (type === 'all' || type === 'knowledge') {
+    let rows: any[] = [];
+    if (isMysql) {
+      try {
+        rows = (await db.prepare(`
+          SELECT id, title, answer, category, tags, MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE) as score
+          FROM knowledge_entries
+          WHERE status='published' AND MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE)
+          ORDER BY score DESC LIMIT ?
+        `).all(q, q, limit)) as any[];
+      } catch (e) {
+        rows = (await db.prepare(`
+          SELECT id, title, answer, category, tags, 1 as score
+          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)
+          LIMIT ?
+        `).all(likeQ, likeQ, limit)) as any[];
+      }
+    } else {
+      try {
+        rows = (await db.prepare(`
+          SELECT id, title, answer, category, tags, rank
+          FROM knowledge_entries_fts fts
+          JOIN knowledge_entries k ON k.id=fts.rowid
+          WHERE knowledge_entries_fts MATCH ? AND k.status='published'
+          ORDER BY rank LIMIT ?
+        `).all(safeQ, limit)) as any[];
+        for (const r of rows) r.score = 1 / (1 + Math.abs(r.rank));
+      } catch (e) {
+        rows = (await db.prepare(`
+          SELECT id, title, answer, category, tags, 1 as score
+          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)
+          LIMIT ?
+        `).all(likeQ, likeQ, limit)) as any[];
+      }
+    }
+    for (const r of rows.slice(0, limit)) {
+      results.push({
+        type: 'knowledge',
+        id: r.id,
+        title: r.title,
+        snippet: highlight(r.answer || r.title, q),
+        score: r.score || 0.5,
+        category: r.category,
+        tags: r.tags,
+      });
+      facets.type.knowledge = (facets.type.knowledge || 0) + 1;
+    }
+  }
+
+  // 项目搜索
+  if (type === 'all' || type === 'projects') {
+    let rows: any[] = [];
+    if (isMysql) {
+      try {
+        rows = (await db.prepare(`
+          SELECT id, name, description, MATCH(name, description) AGAINST (? IN NATURAL LANGUAGE MODE) as score
+          FROM projects
+          WHERE MATCH(name, description) AGAINST (? IN NATURAL LANGUAGE MODE)
+          ORDER BY score DESC LIMIT ?
+        `).all(q, q, limit)) as any[];
+      } catch (e) {
+        rows = (await db.prepare(`
+          SELECT id, name, description, 1 as score FROM projects
+          WHERE name LIKE ? OR description LIKE ? LIMIT ?
+        `).all(likeQ, likeQ, limit)) as any[];
+      }
+    } else {
+      try {
+        rows = (await db.prepare(`
+          SELECT id, name, description, rank
+          FROM projects_fts fts JOIN projects p ON p.id=fts.rowid
+          WHERE projects_fts MATCH ? ORDER BY rank LIMIT ?
+        `).all(safeQ, limit)) as any[];
+        for (const r of rows) r.score = 1 / (1 + Math.abs(r.rank));
+      } catch (e) {
+        rows = (await db.prepare(`
+          SELECT id, name, description, 1 as score FROM projects
+          WHERE name LIKE ? OR description LIKE ? LIMIT ?
+        `).all(likeQ, likeQ, limit)) as any[];
+      }
+    }
+    for (const r of rows.slice(0, limit)) {
+      results.push({
+        type: 'project',
+        id: r.id,
+        title: r.name,
+        snippet: highlight(r.description || r.name, q),
+        score: r.score || 0.5,
+      });
+      facets.type.project = (facets.type.project || 0) + 1;
+    }
+  }
+
+  // 按 score 降序
+  results.sort((a, b) => b.score - a.score);
+
+  return NextResponse.json({
+    query: q,
+    total: results.length,
+    took_ms: Date.now() - t0,
+    results: results.slice(0, limit),
+    facets,
+  });
+}

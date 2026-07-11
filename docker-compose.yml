@@ -1,0 +1,56 @@
+# docker-compose.yml - RMS + OpenClaw + Memcached All-in-One
+# 使用方法：
+#   1. 复制 .env.example 为 .env 并修改配置
+#   2. docker-compose up -d
+#   3. 访问 http://localhost:3800
+
+version: "3.8"
+
+services:
+  rms-allinone:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rms-openclaw:latest
+    container_name: rms-openclaw
+    restart: unless-stopped
+    ports:
+      - "${RMS_PORT:-3800}:3800"
+      - "${OPENCLAW_PORT:-18789}:18789"
+      - "${MYSQL_PORT:-3306}:3306"
+      - "${MEMCACHE_PORT:-11211}:11211"
+    environment:
+      # MySQL
+      MYSQL_USER: ${MYSQL_USER:-rms}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rms123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rms}
+      # RMS
+      RMS_PORT: 3800
+      # OpenClaw
+      OPENCLAW_ENABLED: ${OPENCLAW_ENABLED:-true}
+      OPENCLAW_PORT: 18789
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      # Memcached
+      MEMCACHE_PORT: 11211
+    volumes:
+      # MySQL data persistence
+      - mysql-data:/var/lib/mysql
+      # RMS uploads
+      - rms-uploads:/app/rms/public/uploads
+      # OpenClaw data (agents, sessions, workspace)
+      - openclaw-data:/app/openclaw
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3800/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  mysql-data:
+    driver: local
+  rms-uploads:
+    driver: local
+  openclaw-data:
+    driver: local

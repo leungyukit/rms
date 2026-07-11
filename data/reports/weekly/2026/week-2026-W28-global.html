@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"/><title>RMS 周报 2026-W28</title>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; color: #1f2937; }
+  h1 { color: #1e40af; border-bottom: 3px solid #1e40af; padding-bottom: 8px; }
+  h2 { color: #1e3a8a; margin-top: 24px; border-left: 4px solid #1e40af; padding-left: 8px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }
+  .stat { background: #f3f4f6; padding: 16px; border-radius: 8px; text-align: center; }
+  .stat-value { font-size: 28px; font-weight: bold; color: #1e40af; }
+  .stat-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: #1e40af; color: white; padding: 6px 8px; text-align: left; font-size: 12px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+  tr:nth-child(even) { background: #f9fafb; }
+  .priority-high { color: #dc2626; font-weight: bold; }
+  .footer { margin-top: 32px; padding-top: 16px; border-top: 1px dashed #d1d5db; font-size: 11px; color: #9ca3af; text-align: center; }
+  .empty { color: #9ca3af; font-style: italic; padding: 8px; }
+  .toolbar { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 100; }
+  .toolbar button { padding: 6px 12px; border: 0; border-radius: 6px; background: #1e40af; color: white; font-size: 13px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  .toolbar button:hover { background: #1e3a8a; }
+  @media print {
+    .toolbar { display: none; }
+    body { max-width: 100%; padding: 0; }
+    h1 { page-break-after: avoid; }
+    h2 { page-break-after: avoid; margin-top: 16px; }
+    table, .stats, .stat { page-break-inside: avoid; }
+    @page { margin: 1.5cm; size: A4; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨️ 打印 / 另存为 PDF</button>
+  </div>
+  <h1>📊 RMS 周报 - 2026-W28</h1>
+  <p><b>收件人：</b>系统管理员　<b>周期：</b>2026-07-06 至 2026-07-12　<b>生成时间：</b>2026/7/11 20:51:58</p>
+
+  <h2>📈 全局概览</h2>
+  <div class="stats">
+    <div class="stat"><div class="stat-value">5</div><div class="stat-label">本周完成</div></div>
+    <div class="stat"><div class="stat-value">1</div><div class="stat-label">新增需求</div></div>
+    <div class="stat"><div class="stat-value">11</div><div class="stat-label">进行中</div></div>
+    <div class="stat"><div class="stat-value">4</div><div class="stat-label">高优积压</div></div>
+  </div>
+
+  <h2>👥 处理人分布</h2>
+  <table><tr><th>处理人</th><th>在手需求</th></tr><tr><td>#null</td><td>1</td></tr><tr><td>张三</td><td>6</td></tr><tr><td>王五</td><td>8</td></tr><tr><td>赵六</td><td>5</td></tr></table>
+
+  <h2>✅ 本周完成（Top 20）</h2>
+  <table><tr><th>ID</th><th>标题</th><th>优先级</th><th>处理人</th></tr><tr><td>#15</td><td>VPN账号批量开通</td><td class="">medium</td><td>张三</td></tr><tr><td>#4</td><td>库存预警功能</td><td class="priority-high">high</td><td>王五</td></tr><tr><td>#9</td><td>支付接入微信支付</td><td class="priority-high">high</td><td>王五</td></tr><tr><td>#14</td><td>修复打印机驱动兼容问题</td><td class="">low</td><td>王五</td></tr><tr><td>#16</td><td>会议室预约系统故障</td><td class="priority-high">high</td><td>王五</td></tr></table>
+
+  <h2>🆕 本周新增（Top 20）</h2>
+  <table><tr><th>ID</th><th>标题</th><th>优先级</th></tr><tr><td>#21</td><td>【测试】自动测试创建的需求</td><td class="">medium</td></tr></table>
+
+  <h2>🚨 高优积压</h2>
+  <table><tr><th>ID</th><th>标题</th><th>已积压</th></tr><tr><td>#10</td><td>用户行为数据采集</td><td class="priority-high">495 天</td></tr><tr><td>#1</td><td>订单模块性能优化</td><td class="priority-high">476 天</td></tr><tr><td>#6</td><td>App首页改版</td><td class="priority-high">468 天</td></tr><tr><td>#12</td><td>数据权限管理</td><td class="priority-high">452 天</td></tr></table>
+
+  <h2>📚 知识库新增</h2>
+  <p>本周新增 <b>0</b> 条知识</p>
+  
+
+  <h2>💰 预算告警</h2>
+  <div class="empty">无预算告警</div>
+
+  <div class="footer">RMS 需求管理系统 · 自动生成 · 2026-07-11T12:51:58.733Z</div>
+</body></html>

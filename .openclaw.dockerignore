@@ -1,0 +1,20 @@
+# OpenClaw Docker build context - 排除不需要的文件
+
+# npm 缓存 (1.3GB，不需要打包)
+npm/
+
+# 日志文件
+logs/
+
+# 备份文件
+*.bak
+*.last-good
+*.pre-*
+*-handoff.json
+
+# 通用
+.git/
+node_modules/
+.DS_Store
+*.tar.gz
+*.log

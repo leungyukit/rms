@@ -1,0 +1,364 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+interface ConfigItem {
+  key: string;
+  value: string;
+  label: string;
+  description: string;
+  category: string;
+  type: string;
+  sort_order: number;
+}
+
+const CATEGORIES: Record<string, { label: string; icon: string; desc: string }> = {
+  general: { label: '基础设置', icon: '⚙️', desc: '系统名称、描述、多语言等' },
+  auth: { label: '注册与认证', icon: '🔐', desc: '用户注册、密码、角色配置' },
+  requirement: { label: '需求设置', icon: '📋', desc: '需求状态、优先级、分类' },
+  display: { label: '显示设置', icon: '🖥️', desc: '分页、图表范围等' },
+  notification: { label: '通知设置', icon: '🔔', desc: '通知开关及邮箱' },
+  infrastructure: { label: '基础设施', icon: '🏗️', desc: 'Memcache 等基础设施' },
+  openclaw: { label: 'OpenClaw', icon: '🤖', desc: 'AI Agent 集成配置' },
+  llm: { label: 'LLM 大模型', icon: '🧠', desc: '大语言模型配置' },
+  asr_tts: { label: '语音服务', icon: '🎙️', desc: 'ASR/TTS 语音配置' },
+  wecom: { label: '企业微信', icon: '💬', desc: '企业微信登录配置' },
+  feishu: { label: '飞书登录', icon: '🪶', desc: '飞书扫码登录配置' },
+  dingtalk: { label: '钉钉登录', icon: '💼', desc: '钉钉扫码登录配置' },
+  database: { label: '数据库', icon: '🗄️', desc: 'MySQL 连接配置' },
+  sla: { label: 'SLA 设置', icon: '⏱️', desc: '超期预警与升级规则' },
+  sprint: { label: 'Sprint', icon: '🏃', desc: '迭代冲刺配置' },
+  estimation: { label: '估算设置', icon: '📐', desc: '工作量估算参数' },
+  duplicate: { label: '重复检测', icon: '🔁', desc: '需求去重配置' },
+  ac: { label: 'AC 模板', icon: '✅', desc: '验收检查清单模板' },
+  health: { label: '健康度', icon: '❤️', desc: '需求健康度权重' },
+};
+
+const CATEGORY_ORDER = [
+  'general', 'auth', 'requirement', 'display', 'notification',
+  'infrastructure', 'openclaw', 'llm', 'asr_tts',
+  'wecom', 'feishu', 'dingtalk', 'database',
+  'sla', 'sprint', 'estimation', 'duplicate', 'ac', 'health',
+];
+
+const LABEL_OVERRIDES: Record<string, { label: string; desc: string }> = {
+  _test_marker: { label: '测试标记', desc: '（可忽略）' },
+  memcache_enabled: { label: '启用 Memcache', desc: '使用 Memcache 存储会话（否则用文件）' },
+  memcache_host: { label: 'Memcache 地址', desc: 'Memcache 服务器地址' },
+  memcache_port: { label: 'Memcache 端口', desc: 'Memcache 服务器端口' },
+  memcache_ttl_days: { label: '会话 TTL（天）', desc: '会话在 Memcache 中的保留天数' },
+  dup_similarity_threshold: { label: '标题相似度阈值', desc: '0-1，超过此值视为疑似重复' },
+  dup_check_on_create: { label: '创建时实时检查', desc: '0/1，关闭后只依赖后台扫描' },
+  dup_fuzz_min_len: { label: '最小触发长度', desc: '标题字符数低于此值不触发检查' },
+  team_velocity_sp: { label: '团队周容量 (SP)', desc: '用于排期饱和度预警' },
+  sp_allow_values: { label: 'SP 允许值', desc: '逗号分隔，下拉选项来源' },
+  estimation_hours_per_day: { label: '人/天换算 (小时)', desc: 'estimate_hours / 此值 = 人天' },
+  i18n: { label: '多语言设置', desc: '系统语言与国际化配置' },
+  'i18n.default_locale': { label: '默认语言', desc: '系统默认显示语言' },
+  'i18n.enabled_locales': { label: '启用语言列表', desc: '支持的语言，逗号分隔' },
+  ai_knowledge: { label: 'AI 知识库', desc: '知识库自动同步配置' },
+  'ai_knowledge_target_statuses': { label: '知识库同步状态', desc: '自动同步到知识库的需求状态' },
+  'ai_knowledge_notify_handler': { label: '通知处理人', desc: '同步后是否通知需求处理人' },
+  'ai_knowledge_default_status': { label: '知识库默认状态', desc: '新建知识库条目的默认状态' },
+  'ai_knowledge_auto_enabled': { label: '自动同步', desc: '需求变更时自动同步到知识库' },
+  health: { label: '健康度权重', desc: '需求健康度评分各维度权重' },
+  'health.weight.risks': { label: '风险权重 (%)', desc: '风险因素在健康度评分中的占比' },
+  'health.weight.overdue': { label: '超期权重 (%)', desc: '超期因素在健康度评分中的占比' },
+  'health.weight.milestones': { label: '里程碑权重 (%)', desc: '里程碑因素在健康度评分中的占比' },
+  'health.weight.completion': { label: '完成度权重 (%)', desc: '完成度在健康度评分中的占比' },
+  llm: { label: 'LLM 大模型', desc: '大语言模型配置' },
+  'llm_enabled': { label: '启用 LLM', desc: '是否启用大语言模型' },
+  'llm_max_tokens': { label: '最大生成 Token', desc: '单次回复的最大 Token 数' },
+  'llm_api_key': { label: 'API Key', desc: '大模型服务的认证密钥' },
+  'llm_temperature': { label: 'Temperature', desc: '生成温度，0-1 之间' },
+  openclaw: { label: 'OpenClaw 集成', desc: 'AI Agent 集成配置' },
+  'openclaw_gateway_url': { label: 'Gateway 地址', desc: 'OpenClaw Gateway 的 HTTP 地址' },
+  'openclaw_gateway_token': { label: 'Gateway Token', desc: 'Gateway 认证令牌' },
+  'openclaw_enabled': { label: '启用 OpenClaw', desc: '允许使用 AI Agent' },
+  'openclaw_default_model': { label: '默认模型', desc: 'Agent 使用的默认模型' },
+  'openclaw_workspace_base': { label: '工作目录根路径', desc: 'Agent 工作目录根路径' },
+  sprint: { label: 'Sprint 设置', desc: '迭代/冲刺相关配置' },
+  'sprint_active_count_limit': { label: '活跃 Sprint 数量限制', desc: '同时进行的 Sprint 最大数量' },
+  'default_user_capacity_hours': { label: '用户默认日产能（小时）', desc: '每人每天可用工作小时数' },
+};
+
+function prettyKey(key: string): string {
+  const overrides: Record<string, string> = {
+    i18n: '多语言', ai_knowledge: 'AI 知识库', openclaw: 'OpenClaw', llm: '大模型',
+    health: '健康度', memcache: 'Memcache', dup: '重复检测', sprint: 'Sprint',
+    estimation: '估算', ac: 'AC 模板', wecom: '企业微信', feishu: '飞书',
+    dingtalk: '钉钉', notification: '通知', database: '数据库',
+  };
+  if (overrides[key]) return overrides[key];
+  let rest = key;
+  for (const [prefix, name] of Object.entries(overrides)) {
+    if (key.startsWith(prefix + '_') || key.startsWith(prefix + '.')) {
+      rest = key.slice(prefix.length + 1);
+      break;
+    }
+  }
+  rest = rest
+    .replace(/_enabled$/, '启用').replace(/_url$/, '地址').replace(/_key$/, '密钥')
+    .replace(/_secret$/, '密钥').replace(/_id$/, 'ID').replace(/_port$/, '端口')
+    .replace(/_host$/, '主机').replace(/_user$/, '用户').replace(/_password$/, '密码')
+    .replace(/_size$/, '大小').replace(/_days$/, '天数').replace(/_hours$/, '小时')
+    .replace(/_threshold$/, '阈值').replace(/_limit$/, '限制').replace(/_count$/, '数量')
+    .replace(/_default$/, '默认').replace(/_auto$/, '自动').replace(/_min$/, '最小')
+    .replace(/_max$/, '最大').replace(/_pct$/, '百分比');
+  rest = rest.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+  return rest;
+}
+
+function getLabel(item: ConfigItem): string {
+  const override = LABEL_OVERRIDES[item.key] || LABEL_OVERRIDES[item.category];
+  if (override) return override.label;
+  if (item.label && item.label.trim()) return item.label;
+  return prettyKey(item.key);
+}
+
+function getDesc(item: ConfigItem): string | null {
+  const override = LABEL_OVERRIDES[item.key] || LABEL_OVERRIDES[item.category];
+  if (override) return override.desc;
+  const d = (item.description || '').trim();
+  return d || null;
+}
+
+export default function AdvancedConfigPage() {
+  const [grouped, setGrouped] = useState<Record<string, ConfigItem[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<any>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [activeCat, setActiveCat] = useState<string>('general');
+  const [modelList, setModelList] = useState<string[]>([]);
+
+  // 当 OpenClaw 的地址或 token 变化时，自动获取模型列表
+  useEffect(() => {
+    const url = values['openclaw_gateway_url']?.trim() || 'http://127.0.0.1:18789';
+    const token = values['openclaw_gateway_token']?.trim() || '';
+    if (!token) {
+      setModelList([]);
+      return;
+    }
+    const params = new URLSearchParams({ token });
+    fetch(`/api/openclaw/models`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+      credentials: 'include',
+    })
+      .then(r => r.json())
+      .then(data => { if (data.models) setModelList(data.models); })
+      .catch(() => { setModelList([]); });
+  }, [values['openclaw_gateway_url'], values['openclaw_gateway_token']]);
+
+  useEffect(() => {
+    fetch('/api/config', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.grouped) setGrouped(data.grouped);
+        const vals: Record<string, string> = {};
+        for (const c of (data.configs || [])) vals[c.key] = c.value;
+        setValues(vals);
+        // 默认选中第一个有内容的分类
+        if (data.grouped) {
+          const cats = Object.keys(data.grouped);
+          const firstWithItems = cats.find(c => {
+            const items = data.grouped[c];
+            const info = CATEGORIES[c];
+            const visible = info ? items : items.filter((i: ConfigItem) => i.label && i.label.trim());
+            return visible.length > 0;
+          });
+          if (firstWithItems) setActiveCat(firstWithItems);
+        }
+      })
+      .catch(() => setMessage({ type: 'error', text: '加载配置失败' }))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const updateValue = (key: string, value: string) => {
+    setValues(prev => ({ ...prev, [key]: value }));
+    setMessage(null);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ configs: values }),
+      });
+      if (res.ok) {
+        setMessage({ type: 'success', text: '保存成功！' });
+      } else {
+        const d = await res.json();
+        setMessage({ type: 'error', text: d.error || '保存失败' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: '保存失败，请重试' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderInput = (item: ConfigItem) => {
+    const common = 'w-[480px] px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent';
+    // 特殊处理：OpenClaw 启用开关用下拉选择
+    if (item.key === 'openclaw_enabled') {
+      return (
+        <select value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common}>
+          <option value="true">启用</option>
+          <option value="false">关闭</option>
+        </select>
+      );
+    }
+    // 特殊处理：OpenClaw 默认模型用模型列表下拉选择
+    if (item.key === 'openclaw_default_model' && modelList.length > 0) {
+      return (
+        <select value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common}>
+          <option value="">— 使用系统默认 —</option>
+          {modelList.map(m => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      );
+    }
+    switch (item.type) {
+      case 'boolean':
+        return (
+          <select value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common}>
+            <option value="true">启用</option>
+            <option value="false">关闭</option>
+          </select>
+        );
+      case 'textarea':
+        return (
+          <textarea value={item.value} onChange={e => updateValue(item.key, e.target.value)} rows={4} className={common + ' resize-y'} />
+        );
+      case 'number':
+        return (
+          <input type="number" value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common} />
+        );
+      case 'select':
+        const optsStr = item.type.replace(/^select:/, '');
+        const options = optsStr.split(',').filter(o => o.includes('|'));
+        if (options.length > 0) {
+          return (
+            <select value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common}>
+              {options.map(o => {
+                const [val, label] = o.split('|');
+                return <option key={val} value={val}>{label}</option>;
+              })}
+            </select>
+          );
+        }
+        return <input type="text" value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common} />;
+      default: {
+        const isSensitive = /(secret|token|key|password|app_secret|app_key|api_key|auth_code)/i.test(item.key);
+        const isTokenField = item.key === 'openclaw_gateway_token';
+        if (isSensitive && !isTokenField) {
+          return <input type="password" value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common} />;
+        }
+        return <input type="text" value={item.value} onChange={e => updateValue(item.key, e.target.value)} className={common} />;
+      }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-400">加载中...</div></div>;
+  }
+
+  const visibleCategories = CATEGORY_ORDER;
+
+  const currentItems = (grouped[activeCat] || [])
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  const catInfo = CATEGORIES[activeCat] || { label: activeCat, icon: '📁', desc: '' };
+
+  return (
+    <div className="space-y-4">
+      <div className="page-header">
+        <h1 className="page-title">🔧 高级配置</h1>
+        <p className="page-subtitle">管理系统各项功能开关和参数</p>
+      </div>
+
+      {message && (
+        <div className={`px-4 py-3 rounded-lg text-sm ${message!.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {message!.text}
+        </div>
+      )}
+
+      <div className="flex gap-4">
+        {/* 左侧分类菜单 */}
+        <div className="w-44 shrink-0">
+          <div className="card p-2">
+            {visibleCategories.map(cat => {
+              const info = CATEGORIES[cat] || { label: cat, icon: '📄', desc: '' };
+              return (
+                <button key={cat} onClick={() => setActiveCat(cat)}
+                  className={`sidebar-link text-xs transition-all flex items-center gap-2 ${
+                    activeCat === cat ? 'active' : ''
+                  }`}>
+                  <span>{info.icon}</span>
+                  <span className="flex-1">{info.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 右侧内容 */}
+        <div className="flex-1 min-w-0">
+          <div className="card max-w-[680px]">
+            <div className="card-header">
+              <span className="card-title">
+                <span className="mr-2">{catInfo.icon}</span>
+                {catInfo.label}
+              </span>
+              <p className="text-xs text-gray-500 mt-1">{catInfo.desc}</p>
+            </div>
+            <div className="card-body space-y-5">
+              {currentItems.map(item => (
+                <div key={item.key} className="flex flex-col gap-1.5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-sm font-medium text-gray-700">{getLabel(item)}</label>
+                      {getDesc(item) && <p className="text-xs text-gray-400 mt-0.5">{getDesc(item)}</p>}
+                    </div>
+                  </div>
+                  {renderInput(item)}
+                </div>
+              ))}
+              {currentItems.length === 0 && (
+                <div className="text-sm text-gray-400 py-2">暂无配置项</div>
+              )}
+            </div>
+          </div>
+
+          {/* 底部保存按钮 */}
+          <div className="flex justify-end gap-3 mt-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            >
+              重置
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2 rounded-lg text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-medium hover:shadow-lg transition disabled:opacity-50"
+            >
+              {saving ? '保存中...' : '保存配置'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+}
+
+}

@@ -1,0 +1,30 @@
+# OpenClaw Dockerfile - 包含 .openclaw 配置
+FROM docker.1ms.run/node:24-slim
+
+WORKDIR /root/.openclaw
+
+ENV NODE_ENV=production \
+    HOME=/root
+
+# 安装依赖和 OpenClaw
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g openclaw@2026.6.1 \
+    && npm cache clean --force
+
+# 一次性复制整个 .openclaw 目录
+COPY --chown=root:root .openclaw/ ./
+
+# 清理不需要打包进镜像的内容（缓存、日志、备份）
+RUN rm -rf /root/.openclaw/npm/* \
+    && rm -rf /root/.openclaw/logs/* \
+    && rm -f /root/.openclaw/*.bak \
+    && rm -f /root/.openclaw/*.last-good \
+    && rm -f /root/.openclaw/*.pre-* \
+    && rm -f /root/.openclaw/*-handoff.json \
+    && rm -f /root/.openclaw/openclaw.json_*
+
+EXPOSE 18789
+
+CMD ["openclaw", "gateway", "--port", "18789", "--bind", "0.0.0.0", "--allow-unconfigured"]

@@ -1,0 +1,12 @@
+{
+  "name": "rms",
+  "version": "2.0.0",
+  "description": "RMS 需求管理系统操作：混合模式，优先 MCP，HTTP API 兜底",
+  "skill": "~/.openclaw/plugin-skills/rms/SKILL.md",
+  "env": {
+    "RMS_BASE_URL": "http://localhost:3800",
+    "RMS_ACCESS_TOKEN": "",
+    "RMS_MCP_PATH": "/home/itd3/www/rms/rms-mcp-server.js"
+  },
+  "instructions": "用户需要提供 Access Token 才能使用。Token 在 RMS 系统「🔑 Token 管理」页面生成。"
+}

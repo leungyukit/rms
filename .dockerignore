@@ -1,0 +1,46 @@
+# .dockerignore - Exclude unnecessary files from Docker build context
+
+# Dependencies (will be installed fresh in container)
+node_modules/
+
+# Build output
+.next/
+
+# Data files (will be initialized in container)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Docker files themselves (keep docker/ for build context)
+# docker/
+
+# Git
+.git/
+.gitignore
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment (will be generated in container)
+.env
+.env.local
+.env.production
+
+# Documentation (not needed in image)
+*.md
+!workspace/*.md
+
+# Temp files
+tmp/
+temp/

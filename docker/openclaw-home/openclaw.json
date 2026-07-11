@@ -1,0 +1,53 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/app/openclaw/workspace",
+      "model": {
+        "primary": "tencentmaas/glm-5.2"
+      }
+    },
+    "list": [
+      { "id": "main" }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "CHANGE_ME_TO_YOUR_TOKEN"
+    },
+    "port": 18789,
+    "bind": "0.0.0.0",
+    "controlUi": {
+      "allowInsecureAuth": true
+    }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": false,
+      "appId": "",
+      "appSecret": "",
+      "connectionMode": "websocket",
+      "domain": "feishu",
+      "dmPolicy": "open",
+      "groupPolicy": "open",
+      "requireMention": true
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {
+    "profile": "coding"
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": { "enabled": true },
+        "session-memory": { "enabled": true }
+      }
+    }
+  },
+  "bindings": []
+}

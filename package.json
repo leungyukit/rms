@@ -1,0 +1,38 @@
+{
+  "name": "rms",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack -p 3800",
+    "build": "next build",
+    "start": "next start -p 3800",
+    "seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^11.10.0",
+    "deasync": "^0.1.30",
+    "jsonwebtoken": "^9.0.2",
+    "memcache": "^1.8.0",
+    "memcache-server-stream": "^1.0.0",
+    "mysql2": "^3.11.0",
+    "next": "^15.3.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0"
+  }
+}
