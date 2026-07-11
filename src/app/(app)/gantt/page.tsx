@@ -1,5 +1,6 @@
 // 服务端组件：纯 CSS 甘特图，无第三方依赖
 import { getCurrentUser, getUserRoleProjects, isGlobalAdmin } from '@/lib/auth';
+import { getAsyncDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,26 +50,23 @@ export default async function GanttPage(props: any) {
         userProjectIds = getUserRoleProjects(user.id);
       }
     }
-    const { execSync } = await import('child_process');
-    const password = process.env.MYSQL_PASSWORD || 'rms123456';
-    let sql = `SELECT id, title, status, planned_start, planned_end, priority
-               FROM requirements
-               WHERE planned_start IS NOT NULL AND planned_end IS NOT NULL`;
-    if (!isAdmin && userProjectIds.length > 0) {
-      const ids = userProjectIds.join(',');
-      sql += ` AND project_id IN (${ids})`;
-    } else if (!isAdmin && userProjectIds.length === 0) {
-      sql += ` AND 1=0`;
+    const db = getAsyncDb();
+    const where: string[] = ['planned_start IS NOT NULL', 'planned_end IS NOT NULL'];
+    const params: any[] = [];
+    if (!isAdmin) {
+      if (userProjectIds.length > 0) {
+        where.push(`project_id IN (${userProjectIds.map(() => '?').join(',')})`);
+        params.push(...userProjectIds);
+      } else {
+        where.push('1=0');
+      }
     }
-    sql += ` ORDER BY planned_start LIMIT 30`;
-    const cmd = `mysql -h 127.0.0.1 -P 3306 -u rms -p${password} rms -N -B -e "${sql}" 2>/dev/null`;
-    const out = execSync(cmd, { encoding: 'utf8', timeout: 10000 }).trim();
-    if (out) {
-      items = out.split('\n').map(line => {
-        const p = line.split('\t');
-        return { id: +p[0], title: p[1] || '', status: p[2] || '', planned_start: p[3], planned_end: p[4], priority: p[5] || 'medium' };
-      });
-    }
+    const sql = `SELECT id, title, status, planned_start, planned_end, priority
+                 FROM requirements
+                 WHERE ${where.join(' AND ')}
+                 ORDER BY planned_start
+                 LIMIT 30`;
+    items = (await db.prepare(sql).all(...params)) as any[];
   } catch (e) { console.error('Gantt query error:', e); }
 
   if (items.length === 0) {

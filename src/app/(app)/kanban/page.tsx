@@ -41,7 +41,16 @@ export default async function KanbanPage() {
       SELECT id, title, status, priority, planned_end
       FROM requirements
       ${where}
-      ORDER BY FIELD(status, 'received_not_evaluated','evaluated_not_scheduled','scheduled','in_progress','completed','verified','closed')
+      ORDER BY CASE status
+        WHEN 'received_not_evaluated' THEN 1
+        WHEN 'evaluated_not_scheduled' THEN 2
+        WHEN 'scheduled' THEN 3
+        WHEN 'in_progress' THEN 4
+        WHEN 'completed' THEN 5
+        WHEN 'verified' THEN 6
+        WHEN 'closed' THEN 7
+        ELSE 8
+      END
       LIMIT 50
     `;
 

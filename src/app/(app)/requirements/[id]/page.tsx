@@ -24,6 +24,14 @@ const STATUS_COLORS: Record<string, string> = {
   completed: 'bg-green-100 text-green-700', verified: 'bg-gray-200 text-gray-800', closed: 'bg-gray-200 text-gray-500',
 };
 const PRIORITY_MAP_FALLBACK: Record<string, string> = { high: '🔴 高', medium: '🟡 中', low: '🟢 低' };
+const RELATION_TYPE_LABELS: Record<string, string> = {
+  related: '关联',
+  depends_on: '依赖',
+  blocks: '阻塞',
+  implements: '实现',
+  tests: '测试',
+  fixes: '修复',
+};
 
 // SP 颜色规则抽到 @/lib/sp-badge
 const SP_ALLOW_VALUES = [1, 2, 3, 5, 8, 13, 21];
@@ -698,7 +706,10 @@ export default function RequirementDetailPage() {
                 <div key={c.id} className="py-1"><Link href={`/requirements/${c.id}`} className="text-sm text-gray-900 hover:underline">#{c.id} {c.title}</Link> <span className={`px-1.5 py-0.5 rounded text-xs ${STATUS_COLORS[c.status] || 'bg-gray-100 text-gray-700'}`}>{statusLabel(c.status)}</span></div>
               ))}
               {data.relations?.map((r: any) => (
-                <div key={r.relation_id} className="py-1"><Link href={`/requirements/${r.id}`} className="text-sm text-gray-900 hover:underline">#{r.id} {r.title}</Link></div>
+                <div key={r.relation_id} className="py-1 flex items-center gap-2">
+                  <Link href={`/requirements/${r.id}`} className="text-sm text-gray-900 hover:underline">#{r.id} {r.title}</Link>
+                  <span className="px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{RELATION_TYPE_LABELS[r.relation_type] || r.relation_type}</span>
+                </div>
               ))}
             </Collapsible>
           )}
@@ -881,6 +892,17 @@ export default function RequirementDetailPage() {
             </InfoRow>
             <InfoRow label="计划开始" value={editing ? <input type="date" value={form.planned_start || ''} onChange={e => setForm({...form, planned_start: e.target.value})} className="border rounded px-2 py-1 text-sm" /> : (data.planned_start || '—')} />
             <InfoRow label="计划完成" value={editing ? <input type="date" value={form.planned_end || ''} onChange={e => setForm({...form, planned_end: e.target.value})} className="border rounded px-2 py-1 text-sm" /> : (data.planned_end || '—')} />
+            <InfoRow label="优先级框架">
+              {editing ? (
+                <select value={form.priority_framework || ''} onChange={e => setForm({...form, priority_framework: e.target.value || null})} className="border rounded px-2 py-1 text-sm">
+                  <option value="">— 无 —</option>
+                  <option value="MoSCoW">MoSCoW</option>
+                  <option value="Kano">Kano</option>
+                  <option value="WSJF">WSJF</option>
+                </select>
+              ) : (data.priority_framework || '—')}
+            </InfoRow>
+            <InfoRow label="优先级评分" value={editing ? <input type="number" min={0} step={0.1} value={form.priority_score ?? ''} onChange={e => setForm({...form, priority_score: e.target.value === '' ? null : Number(e.target.value)})} className="border rounded px-2 py-1 text-sm" /> : (data.priority_score ?? '—')} />
             {/* ===== 估时/Story Point 区块 ===== */}
             <div className="pt-3 mt-1 border-t space-y-2">
               <div className="flex items-center justify-between">

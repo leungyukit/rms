@@ -1060,6 +1060,42 @@ CREATE TABLE IF NOT EXISTS `requirement_versions` (
 
 
 --
+-- Table structure for table `requirement_baselines`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE IF NOT EXISTS `requirement_baselines` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `project_id` int DEFAULT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
+  `created_by` int DEFAULT NULL,
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `project_id` (`project_id`),
+  KEY `created_by` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `requirement_baseline_items`
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE IF NOT EXISTS `requirement_baseline_items` (
+  `baseline_id` int NOT NULL,
+  `requirement_id` int NOT NULL,
+  `snapshot_json` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`baseline_id`,`requirement_id`),
+  KEY `requirement_id` (`requirement_id`),
+  CONSTRAINT `requirement_baseline_items_ibfk_1` FOREIGN KEY (`baseline_id`) REFERENCES `requirement_baselines` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `requirement_baseline_items_ibfk_2` FOREIGN KEY (`requirement_id`) REFERENCES `requirements` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `requirements`
 --
 
@@ -1071,6 +1107,8 @@ CREATE TABLE IF NOT EXISTS `requirements` (
   `description` text COLLATE utf8mb4_unicode_ci,
   `business_unit` varchar(200) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `priority` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'medium',
+  `priority_framework` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `priority_score` double DEFAULT NULL,
   `status` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'received_not_evaluated',
   `category` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'project',
   `project_id` int DEFAULT NULL,

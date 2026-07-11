@@ -43,6 +43,7 @@ export default function NewRequirementPage() {
     requester_name: '', handler_id: '', verifier_id: '', benefit: '',
     planned_start: '', planned_end: '', tags: '',
     story_points: '', estimate_hours: '', actual_hours: '0',
+    priority_framework: '', priority_score: '',
   });
 
   const [templates, setTemplates] = useState<any[]>([]);
@@ -129,6 +130,8 @@ export default function NewRequirementPage() {
       body.story_points = body.story_points === '' || body.story_points == null ? null : Number(body.story_points);
       body.estimate_hours = body.estimate_hours === '' || body.estimate_hours == null ? null : Number(body.estimate_hours);
       body.actual_hours = body.actual_hours === '' || body.actual_hours == null ? 0 : Number(body.actual_hours);
+      body.priority_score = body.priority_score === '' || body.priority_score == null ? null : Number(body.priority_score);
+      body.priority_framework = body.priority_framework || null;
       const res = await fetch('/api/requirements', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
@@ -319,6 +322,20 @@ export default function NewRequirementPage() {
               <select value={form.category} onChange={e => set('category', e.target.value)} className="form-input">
                 {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Field label="优先级框架">
+              <select value={form.priority_framework} onChange={e => set('priority_framework', e.target.value)} className="form-input">
+                <option value="">— 无 —</option>
+                <option value="MoSCoW">MoSCoW</option>
+                <option value="Kano">Kano</option>
+                <option value="WSJF">WSJF</option>
+              </select>
+            </Field>
+            <Field label="优先级评分">
+              <input type="number" min={0} step={0.1} value={form.priority_score} onChange={e => set('priority_score', e.target.value)} className="form-input" placeholder="0.0" />
             </Field>
           </div>
 

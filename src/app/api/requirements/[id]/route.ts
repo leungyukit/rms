@@ -6,6 +6,7 @@ import { ensureEstimationFields, getEstimationConfig, isValidStoryPoints } from 
 import { ensureAcceptanceCriteriaTables, getAcAggregate } from '@/lib/ac-migrations';
 import { ensureChecklistTables, getChecklistAggregate } from '@/lib/checklist-migrations';
 import { ensurePerfIndexes, syncPriorityRank } from '@/lib/perf-indexes-migrations';
+import { ensurePriorityFrameworkFields } from '@/lib/requirement-priority-migrations';
 import { spToLabel } from '@/lib/sp-badge';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,6 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   // 性能优化（需求 600225）：确保索引和 priority_rank 列已建
   ensurePerfIndexes();
+  ensurePriorityFrameworkFields();
   const db = getAsyncDb();
 
   const row = (await db.prepare(`
@@ -68,6 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   // 估时派生字段
   ensureEstimationFields();
+  ensurePriorityFrameworkFields();
   row.sp_label = spToLabel(row.story_points);
   if (row.actual_hours != null && row.estimate_hours && row.estimate_hours > 0) {
     row.estimation_accuracy = Math.round((row.actual_hours / row.estimate_hours) * 100) / 100;
@@ -112,7 +115,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const fields = ['title', 'description', 'business_unit', 'priority', 'status',
     'category', 'project_id', 'parent_id', 'requester_name', 'handler_id',
     'verifier_id', 'benefit', 'planned_start', 'planned_end', 'actual_end',
-    'solution', 'lessons_learned', 'root_cause', 'sprint_id'];
+    'solution', 'lessons_learned', 'root_cause', 'sprint_id', 'priority_framework'];
 
   const workflowFields = ['workflow_id', 'current_node'];
 
@@ -181,6 +184,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       updates.push(`${f} = ?`);
       values.push(body[f] === null ? null : body[f]);
     }
+  }
+  if (body.priority_score !== undefined) {
+    updates.push('priority_score = ?');
+    values.push(body.priority_score === null ? null : Number(body.priority_score));
   }
 
   if (updates.length > 1) {

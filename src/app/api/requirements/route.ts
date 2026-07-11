@@ -7,6 +7,7 @@ import { ensureSlaTables, getSlaConfig } from '@/lib/sla-migrations';
 import { ensureEstimationFields, getEstimationConfig, isValidStoryPoints } from '@/lib/estimation-migrations';
 import { ensureDedupFields } from '@/lib/dedup-migrations';
 import { ensurePerfIndexes, syncPriorityRank } from '@/lib/perf-indexes-migrations';
+import { ensurePriorityFrameworkFields } from '@/lib/requirement-priority-migrations';
 import { spToLabel } from '@/lib/sp-badge';
 
 export async function GET(req: NextRequest) {
@@ -16,6 +17,7 @@ export async function GET(req: NextRequest) {
 
   // 性能优化（需求 600225）：确保索引和 priority_rank 列已建
   ensurePerfIndexes();
+  ensurePriorityFrameworkFields();
 
   const db = getAsyncDb();
   const url = req.nextUrl;
@@ -221,6 +223,7 @@ export async function POST(req: NextRequest) {
 
   // 首次调用时确保 estimation 字段已建（幂等，重复调无副作用）
   ensureEstimationFields();
+  ensurePriorityFrameworkFields();
 
   try {
     const body = await req.json();
@@ -229,6 +232,7 @@ export async function POST(req: NextRequest) {
       category, project_id, parent_id, requester_name,
       handler_id, verifier_id, benefit, planned_start, planned_end,
       story_points, estimate_hours, actual_hours,
+      priority_framework, priority_score,
       tags
     } = body;
 
@@ -253,8 +257,9 @@ export async function POST(req: NextRequest) {
     const result = (await db.prepare(`
       INSERT INTO requirements (title, description, business_unit, priority, priority_rank, status, category,
         project_id, parent_id, requester_name, receiver_id, handler_id, verifier_id,
-        benefit, planned_start, planned_end, story_points, estimate_hours, actual_hours)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        benefit, planned_start, planned_end, story_points, estimate_hours, actual_hours,
+        priority_framework, priority_score)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       title,
       description || '',
@@ -274,7 +279,9 @@ export async function POST(req: NextRequest) {
       planned_end || null,
       story_points != null ? Number(story_points) : null,
       estimate_hours != null ? Number(estimate_hours) : null,
-      actual_hours != null ? Number(actual_hours) : null
+      actual_hours != null ? Number(actual_hours) : null,
+      priority_framework || null,
+      priority_score != null ? Number(priority_score) : null
     ));
 
     const reqId = result.lastInsertRowid as number;
