@@ -98,7 +98,7 @@ RMS（Requirement Management System）是一套面向中小型团队的需求收
 ### 2.2 目录结构
 
 ```
-/home/itd3/www/rms/
+/home/www/rms/
 ├── src/
 │   ├── app/                    # Next.js App Router
 │   │   ├── (app)/             # 需登录页面（React Server Components）
@@ -662,7 +662,7 @@ node rms-api.js create --title "新需求" --token rms_xxx
 ### 11.1 开发环境
 
 ```bash
-cd /home/itd3/www/rms
+cd /home/www/rms
 
 # 1. 安装依赖
 npm ci
