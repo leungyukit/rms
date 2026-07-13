@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useState } from 'react';
+import { useT } from '@/i18n/config';
 import { useRouter } from 'next/navigation';
 
 interface Role {
@@ -27,6 +28,7 @@ export default function MenuPermissionsPage() {
   const [message, setMessage] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
+  const { t } = useT();
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' })
@@ -144,7 +146,7 @@ export default function MenuPermissionsPage() {
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 text-sm">
                       <span className="mr-2">{item.icon}</span>
-                      <span>{item.label_key}</span>
+                      <span>{t(item.label_key)}</span>
                       <span className="text-xs text-gray-400 ml-2">{item.href}</span>
                     </td>
                     {roles.map(r => (
