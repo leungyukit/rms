@@ -29,6 +29,36 @@ let sqliteDb: Database.Database | null = null;
 
 // 将 MySQL 方言转换为 SQLite 方言
 function normalizeSqliteSql(sql: string): string {
+  // 处理 INSERT ... ON DUPLICATE KEY UPDATE
+  // 转换为 SQLite 的 INSERT OR REPLACE 逻辑
+  if (/INSERT[\s\S]+ON\s+DUPLICATE\s+KEY\s+UPDATE/i.test(sql)) {
+    // 清理SQL，去除多余空格和换行符
+    const cleanSql = sql.replace(/\s+/g, ' ').trim();
+    // 提取 INSERT 部分的列（支持占位符 ? 或具体值）
+    const insertMatch = cleanSql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+    if (insertMatch) {
+      const table = insertMatch[1];
+      const cols = insertMatch[2].split(',').map((c: string) => c.trim());
+      const vals = insertMatch[3]; // 保留原始值（可能是 ? 或具体值）
+      // 提取 UPDATE 部分的赋值
+      const updateMatch = cleanSql.match(/ON\s+DUPLICATE\s+KEY\s+UPDATE\s+(.+)$/i);
+      if (updateMatch && insertMatch) {
+        const updates = updateMatch[1].split(',').map((s: string) => {
+          const [col] = s.trim().split('=').map((c: string) => c.trim());
+          return `${col}=excluded.${col}`;
+        }).join(', ');
+        // 对于 role_menu_permissions 表，使用复合主键 (role_id, menu_item_id)
+        // 注意：这是一个硬编码的解决方案，更好的方法是查询表的主键信息
+        let pk = cols.join(', '); // 默认使用所有列
+        if (table === 'role_menu_permissions') {
+          pk = 'role_id, menu_item_id';
+        }
+        // 构建 SQLite 语句，保留占位符
+        return `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${vals}) ON CONFLICT(${pk}) DO UPDATE SET ${updates}`;
+      }
+    }
+  }
+
   return sql
     .replace(/\bINSERT\s+IGNORE\s+INTO\b/gi, 'INSERT OR IGNORE INTO')
     .replace(/\bDROP\s+INDEX\s+IF\s+EXISTS\s+\S+\s+ON\s+\S+/gi, '') // SQLite 不支持该语法，忽略

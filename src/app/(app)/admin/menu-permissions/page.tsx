@@ -103,6 +103,16 @@ export default function MenuPermissionsPage() {
         }
       }
       setMessage('保存成功');
+      // 保存成功后重新加载数据
+      const response = await fetch('/api/admin/menu-permissions', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        const parsed: Record<number, Record<number, boolean>> = {};
+        for (const rid in data.permissions) {
+          parsed[Number(rid)] = data.permissions[rid];
+        }
+        setPermissions(parsed);
+      }
     } catch {
       setMessage('保存失败');
     } finally {
