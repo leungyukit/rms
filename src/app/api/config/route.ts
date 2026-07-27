@@ -40,11 +40,12 @@ const DEFAULT_CONFIGS = [
 
   // LLM 大模型设置
   { key: 'llm_enabled', value: 'false', label: '启用 LLM 智能对话', desc: '启用后对话工作台将使用大模型进行自然语言理解', cat: 'llm', type: 'boolean', sort: 60 },
-  { key: 'llm_api_url', value: 'https://api.stepfun.com/v1/chat/completions', label: 'LLM API 地址', desc: '兼容 OpenAI 格式的 Chat Completions 接口', cat: 'llm', type: 'text', sort: 61 },
+  { key: 'llm_api_url', value: '', label: 'LLM API 地址', desc: '兼容 OpenAI 格式的 Chat Completions 接口', cat: 'llm', type: 'text', sort: 61 },
   { key: 'llm_api_key', value: '', label: 'API Key', desc: 'LLM 服务的认证密钥', cat: 'llm', type: 'text', sort: 62 },
-  { key: 'llm_model', value: 'step-2-16k', label: '模型名称', desc: '使用的模型 ID（如 step-2-16k, gpt-4o 等）', cat: 'llm', type: 'text', sort: 63 },
-  { key: 'llm_max_tokens', value: '2048', label: '最大生成 Token', desc: '单次回复的最大 Token 数', cat: 'llm', type: 'number', sort: 64 },
-  { key: 'llm_temperature', value: '0.7', label: 'Temperature', desc: '生成温度，0-1之间，越低越确定性', cat: 'llm', type: 'text', sort: 65 },
+  { key: 'llm_model', value: '', label: '模型名称', desc: '使用的模型 ID（如 gpt-4o-mini, gpt-4o, step-2-16k 等）', cat: 'llm', type: 'text', sort: 63 },
+  { key: 'llm_use_tool_role', value: 'true', label: '使用标准 tool 角色', desc: '是否使用标准 OpenAI 格式的 role: "tool"，部分服务商需要关闭', cat: 'llm', type: 'boolean', sort: 67 },
+  { key: 'llm_max_tokens', value: '', label: '最大生成 Token', desc: '单次回复的最大 Token 数', cat: 'llm', type: 'number', sort: 64 },
+  { key: 'llm_temperature', value: '', label: 'Temperature', desc: '生成温度，0-1之间，越低越确定性', cat: 'llm', type: 'text', sort: 65 },
   { key: 'llm_system_prompt', value: '', label: '自定义系统提示词', desc: '追加到默认系统提示词后面（可选）', cat: 'llm', type: 'textarea', sort: 66 },
 
   // ASR / TTS 语音服务
@@ -91,6 +92,12 @@ const DEFAULT_CONFIGS = [
   { key: 'mysql_user', value: 'root', label: 'MySQL 用户名', desc: 'MySQL 连接用户名', cat: 'database', type: 'text', sort: 5 },
   { key: 'mysql_password', value: '', label: 'MySQL 密码', desc: 'MySQL 连接密码', cat: 'database', type: 'text', sort: 6 },
   { key: 'mysql_pool_size', value: '10', label: '连接池大小', desc: 'MySQL 连接池最大连接数', cat: 'database', type: 'number', sort: 7 },
+
+  // Memcache 配置
+  { key: 'memcache_enabled', value: 'false', label: '启用 Memcache', desc: '启用 Memcache 作为会话存储后端', cat: 'memcache', type: 'boolean', sort: 1 },
+  { key: 'memcache_host', value: '127.0.0.1', label: 'Memcache 主机', desc: 'Memcache 服务器地址', cat: 'memcache', type: 'text', sort: 2 },
+  { key: 'memcache_port', value: '11211', label: 'Memcache 端口', desc: 'Memcache 服务器端口', cat: 'memcache', type: 'number', sort: 3 },
+  { key: 'memcache_ttl_days', value: '30', label: '会话 TTL（天）', desc: '会话在 Memcache 中的存活天数', cat: 'memcache', type: 'number', sort: 4 },
 ];
 
 // Ensure config table exists —— 每个进程只走一次 seed（避免 50+ INSERT 启动风暴）

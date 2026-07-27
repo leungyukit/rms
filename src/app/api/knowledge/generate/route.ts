@@ -13,14 +13,14 @@ export async function POST(req: NextRequest) {
   const db = getAsyncDb();
 
   // Get LLM config
-  const get = async (key: string, def: string = '') => {
-    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? def; } catch { return def; }
+  const get = async (key: string) => {
+    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? ''; } catch { return ''; }
   };
   const config = {
-    enabled: (await get('llm_enabled', 'false')) === 'true',
-    apiUrl: await get('llm_api_url', ''),
-    apiKey: await get('llm_api_key', ''),
-    model: await get('llm_model', 'step-2-16k'),
+    enabled: (await get('llm_enabled')) === 'true',
+    apiUrl: await get('llm_api_url'),
+    apiKey: await get('llm_api_key'),
+    model: await get('llm_model'),
   };
 
   if (!config.enabled || !config.apiKey) {

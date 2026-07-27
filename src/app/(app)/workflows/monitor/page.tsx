@@ -55,8 +55,8 @@ export default function WorkflowMonitorPage() {
   return (
     <div className="p-6">
       <div className="page-header">
-        <h1>📊 工作流监控</h1>
-        <p>实时监控工作流执行状态和性能</p>
+        <h1>📊 SLA 预警</h1>
+        <p>实时监控工作流执行状态和SLA预警</p>
       </div>
 
       {/* Stats */}

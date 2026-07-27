@@ -196,7 +196,7 @@ export function startInstance(opts: {
 export function advanceInstance(
   instanceId: number,
   ctx: TransitionContext
-): { success: boolean; nextNode?: string; ended?: boolean; error?: string } {
+): { success: boolean; nextNode?: string; ended?: boolean; waiting?: boolean; error?: string } {
   ensureWorkflowEngineTables();
   const db = getDb();
 
@@ -207,18 +207,46 @@ export function advanceInstance(
   const currentKey = inst.current_node_key;
   if (!currentKey) return { success: false, error: '实例无当前节点' };
 
+  // 获取当前节点信息
+  const currentNode = db.prepare('SELECT * FROM instance_nodes WHERE instance_id = ? AND node_key = ?').get(instanceId, currentKey) as any;
+  if (!currentNode) return { success: false, error: '当前节点不存在' };
+
   // 找到从当前节点出发的所有边
   const outEdges = db.prepare(
     'SELECT * FROM instance_edges WHERE instance_id = ? AND from_node = ?'
   ).all(instanceId, currentKey) as any[];
 
-  // 按条件找出匹配的边
-  const matchedEdge = pickMatchingEdge(outEdges, ctx);
+  // 如果是条件节点，使用节点配置的条件
+  let matchedEdge = null;
+  if (currentNode.type === 'condition' && currentNode.config) {
+    try {
+      const config = typeof currentNode.config === 'string' ? JSON.parse(currentNode.config) : currentNode.config;
+      if (config.condition_type && config.condition_value) {
+        // 使用节点配置的条件来选择边
+        matchedEdge = pickMatchingEdgeByNodeConfig(outEdges, config, ctx, inst.requirement_id);
+      }
+    } catch (e) {
+      console.error('解析条件节点配置失败:', e);
+    }
+  }
+
+  // 如果没有匹配的边，使用原来的逻辑
+  if (!matchedEdge) {
+    matchedEdge = pickMatchingEdge(outEdges, ctx, inst.requirement_id);
+  }
+
   if (!matchedEdge) {
     // 没有出边，可能就是结束
-    const node = db.prepare('SELECT * FROM instance_nodes WHERE instance_id = ? AND node_key = ?').get(instanceId, currentKey) as any;
-    if (node?.type === 'end') {
+    if (currentNode?.type === 'end') {
       return finishInstance(instanceId, currentKey, ctx);
+    }
+    // 对于条件节点，如果没有匹配的边，则等待条件满足
+    if (currentNode?.type === 'condition') {
+      return { 
+        success: false, 
+        error: '条件节点：没有匹配的边，等待条件满足',
+        waiting: true 
+      };
     }
     return { success: false, error: '没有匹配的下一节点' };
   }
@@ -262,20 +290,170 @@ export function advanceInstance(
 /**
  * 匹配符合条件的边
  */
-function pickMatchingEdge(edges: any[], ctx: TransitionContext): any | null {
+function pickMatchingEdge(edges: any[], ctx: TransitionContext, requirementId?: number): any | null {
   if (!edges.length) return null;
   // 优先匹配非 always 的边
   const conditional = edges.filter(e => e.condition_type !== 'always');
   if (conditional.length) {
     for (const e of conditional) {
-      if (matchCondition(e, ctx)) return e;
+      if (matchCondition(e, ctx, requirementId)) return e;
     }
     return null; // 有条件边但都不匹配，不推进
   }
   return edges[0]; // 全是 always，取第一条
 }
 
-function matchCondition(edge: any, ctx: TransitionContext): boolean {
+/**
+ * 评估节点配置的条件
+ */
+function evaluateNodeCondition(nodeConfig: any, ctx: TransitionContext, requirementId?: number): boolean {
+  const conditionType = nodeConfig.condition_type;
+  const conditionValue = nodeConfig.condition_value || '';
+  const values = conditionValue.split('|').map((s: string) => s.trim()).filter(Boolean);
+
+  switch (conditionType) {
+    case 'status':
+      return ctx.requirementStatus ? values.includes(ctx.requirementStatus) : false;
+    case 'priority':
+      return ctx.requirementPriority ? values.includes(ctx.requirementPriority) : false;
+    case 'time_gt': {
+      const sec = parseDuration(conditionValue);
+      return (ctx.nodeDurationSec || 0) > sec;
+    }
+    case 'time_diff_gt': {
+      // 计算需求创建时间与当前时间的时间差（天）
+      if (!requirementId) return false;
+      const db = getDb();
+      const requirement = db.prepare('SELECT created_at FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || !requirement.created_at) return false;
+      
+      const createdTime = new Date(requirement.created_at).getTime();
+      const now = Date.now();
+      const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
+      const targetDays = parseInt(conditionValue) || 0;
+      return diffDays > targetDays;
+    }
+    case 'time_diff_lt': {
+      // 计算需求创建时间与当前时间的时间差（天）
+      if (!requirementId) return false;
+      const db = getDb();
+      const requirement = db.prepare('SELECT created_at FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || !requirement.created_at) return false;
+      
+      const createdTime = new Date(requirement.created_at).getTime();
+      const now = Date.now();
+      const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
+      const targetDays = parseInt(conditionValue) || 0;
+      return diffDays < targetDays;
+    }
+    case 'field_eq':
+    case 'field_contains':
+    case 'field_gt':
+    case 'field_lt': {
+      if (!requirementId) return false;
+      const [field, ...valueParts] = conditionValue.split(':');
+      const compareValue = valueParts.join(':').trim();
+      if (!field || !compareValue) return false;
+      
+      // 查询需求字段值
+      const db = getDb();
+      const requirement = db.prepare('SELECT * FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || requirement[field] === undefined || requirement[field] === null) return false;
+      
+      const fieldValue = requirement[field];
+      
+      switch (conditionType) {
+        case 'field_eq':
+          return String(fieldValue) === compareValue;
+        case 'field_contains':
+          return String(fieldValue).toLowerCase().includes(compareValue.toLowerCase());
+        case 'field_gt': {
+          const numField = parseFloat(fieldValue);
+          const numCompare = parseFloat(compareValue);
+          return !isNaN(numField) && !isNaN(numCompare) && numField > numCompare;
+        }
+        case 'field_lt': {
+          const numField = parseFloat(fieldValue);
+          const numCompare = parseFloat(compareValue);
+          return !isNaN(numField) && !isNaN(numCompare) && numField < numCompare;
+        }
+        default:
+          return false;
+      }
+    }
+    default:
+      return true; // 未知条件类型，默认通过
+  }
+}
+
+/**
+ * 根据节点配置匹配边（用于条件节点）
+ */
+function pickMatchingEdgeByNodeConfig(edges: any[], nodeConfig: any, ctx: TransitionContext, requirementId?: number): any | null {
+  if (!edges.length) return null;
+  
+  // 首先检查是否有边标签匹配条件描述
+  if (nodeConfig.description) {
+    const matchedByLabel = edges.find(e => e.label === nodeConfig.description);
+    if (matchedByLabel) return matchedByLabel;
+  }
+  
+  // 然后检查边的条件是否匹配节点配置的条件
+  for (const edge of edges) {
+    // 如果边有具体的条件类型，需要检查是否匹配节点配置
+    if (edge.condition_type !== 'always') {
+      // 解析节点配置的条件
+      const nodeConditionType = nodeConfig.condition_type;
+      const nodeConditionValue = nodeConfig.condition_value || '';
+      
+      // 如果节点配置的条件类型与边的条件类型相同，进一步检查值
+      if (edge.condition_type === nodeConditionType) {
+        // 对于状态和优先级条件，检查值是否匹配
+        if (nodeConditionType === 'status' || nodeConditionType === 'priority') {
+          const nodeValues = nodeConditionValue.split('|').map((s: string) => s.trim()).filter(Boolean);
+          const edgeValues = (edge.condition_value || '').split('|').map((s: string) => s.trim()).filter(Boolean);
+          
+          // 如果节点配置的值包含边的值，则匹配
+          if (edgeValues.some((ev: string) => nodeValues.includes(ev))) {
+            return edge;
+          }
+        }
+        // 对于字段条件，检查字段名是否匹配
+        else if (nodeConditionType.startsWith('field_')) {
+          const [nodeField] = nodeConditionValue.split(':');
+          const [edgeField] = (edge.condition_value || '').split(':');
+          if (nodeField === edgeField) {
+            return edge;
+          }
+        }
+        // 对于时间条件，检查时间值是否匹配
+        else if (nodeConditionType === 'time_gt' || nodeConditionType === 'time_diff_gt' || nodeConditionType === 'time_diff_lt') {
+          // 时间条件通常比较数值，如果边的值小于等于节点配置的值，则匹配
+          const nodeDuration = parseDuration(nodeConditionValue);
+          const edgeDuration = parseDuration(edge.condition_value || '');
+          if (edgeDuration <= nodeDuration) {
+            return edge;
+          }
+        }
+      }
+    }
+    
+    // 如果边没有条件（always），但节点有配置条件，评估节点条件
+    if (edge.condition_type === 'always' && nodeConfig.condition_type && nodeConfig.condition_value) {
+      // 评估节点配置的条件
+      const conditionMet = evaluateNodeCondition(nodeConfig, ctx, requirementId);
+      
+      if (conditionMet) {
+        return edge;
+      }
+    }
+  }
+  
+  // 如果没有找到匹配的边，返回第一条边（作为默认路径）
+  return edges[0];
+}
+
+function matchCondition(edge: any, ctx: TransitionContext, requirementId?: number): boolean {
   const { condition_type, condition_value } = edge;
   const values = (condition_value || '').split('|').map((s: string) => s.trim()).filter(Boolean);
 
@@ -288,6 +466,69 @@ function matchCondition(edge: any, ctx: TransitionContext): boolean {
       const sec = parseDuration(condition_value);
       return (ctx.nodeDurationSec || 0) > sec;
     }
+    case 'time_diff_gt': {
+      // 计算需求创建时间与当前时间的时间差（天）
+      if (!requirementId) return false;
+      const db = getDb();
+      const requirement = db.prepare('SELECT created_at FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || !requirement.created_at) return false;
+      
+      const createdTime = new Date(requirement.created_at).getTime();
+      const now = Date.now();
+      const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
+      const targetDays = parseInt(condition_value) || 0;
+      return diffDays > targetDays;
+    }
+    case 'time_diff_lt': {
+      // 计算需求创建时间与当前时间的时间差（天）
+      if (!requirementId) return false;
+      const db = getDb();
+      const requirement = db.prepare('SELECT created_at FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || !requirement.created_at) return false;
+      
+      const createdTime = new Date(requirement.created_at).getTime();
+      const now = Date.now();
+      const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
+      const targetDays = parseInt(condition_value) || 0;
+      return diffDays < targetDays;
+    }
+    case 'field_eq':
+    case 'field_contains':
+    case 'field_gt':
+    case 'field_lt': {
+      if (!requirementId) return false;
+      const [field, ...valueParts] = condition_value.split(':');
+      const compareValue = valueParts.join(':').trim();
+      if (!field || !compareValue) return false;
+      
+      // 查询需求字段值
+      const db = getDb();
+      // 安全地查询字段值
+      const requirement = db.prepare('SELECT * FROM requirements WHERE id = ?').get(requirementId) as any;
+      if (!requirement || requirement[field] === undefined || requirement[field] === null) return false;
+      
+      const fieldValue = requirement[field];
+      
+      switch (condition_type) {
+        case 'field_eq':
+          return String(fieldValue) === compareValue;
+        case 'field_contains':
+          return String(fieldValue).toLowerCase().includes(compareValue.toLowerCase());
+        case 'field_gt': {
+          const numField = parseFloat(fieldValue);
+          const numCompare = parseFloat(compareValue);
+          return !isNaN(numField) && !isNaN(numCompare) && numField > numCompare;
+        }
+        case 'field_lt': {
+          const numField = parseFloat(fieldValue);
+          const numCompare = parseFloat(compareValue);
+          return !isNaN(numField) && !isNaN(numCompare) && numField < numCompare;
+        }
+        default:
+          return false;
+      }
+    }
+
     default:
       return true;
   }

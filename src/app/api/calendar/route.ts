@@ -15,27 +15,34 @@ export async function GET(req: NextRequest) {
 
   const db = getAsyncDb();
 
-  // Get all handlers
+  // Get all handlers who have requirements (with or without planned dates)
   const handlers = (await db.prepare(`
     SELECT DISTINCT u.id, u.display_name
     FROM users u
     JOIN requirements r ON r.handler_id = u.id
-    WHERE r.planned_start IS NOT NULL AND r.planned_end IS NOT NULL
     ORDER BY u.display_name
   `).all()) as any[];
 
   // Get requirements in date range (overlapping with [start, end])
+  // Also include requirements without planned dates or with dates outside range
   let sql = `
     SELECT r.id, r.title, r.status, r.priority, r.planned_start, r.planned_end,
       r.handler_id, u.display_name as handler_name, p.name as project_name, r.category
     FROM requirements r
     LEFT JOIN users u ON u.id = r.handler_id
     LEFT JOIN projects p ON p.id = r.project_id
-    WHERE r.planned_start IS NOT NULL AND r.planned_end IS NOT NULL
-      AND r.planned_start <= ? AND r.planned_end >= ?
-      AND r.handler_id IS NOT NULL
+    WHERE r.handler_id IS NOT NULL
   `;
-  const params: any[] = [end, start];
+  const params: any[] = [];
+  
+  // Only filter by date if both start and end are provided
+  if (start && end) {
+    sql += ` AND (
+      (r.planned_start IS NULL AND r.planned_end IS NULL) OR
+      (r.planned_start IS NOT NULL AND r.planned_end IS NOT NULL AND r.planned_start <= ? AND r.planned_end >= ?)
+    )`;
+    params.push(end, start);
+  }
 
   if (handlerId) {
     sql += ' AND r.handler_id = ?';

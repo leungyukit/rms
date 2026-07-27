@@ -15,6 +15,31 @@ const STATUS_OPTIONS = [
   { value: 'closed', label: '已关闭' },
 ];
 
+const FIELD_OPTIONS = [
+  { value: 'title', label: '标题' },
+  { value: 'description', label: '描述' },
+  { value: 'business_unit', label: '业务部门' },
+  { value: 'category', label: '分类' },
+  { value: 'priority', label: '优先级' },
+  { value: 'status', label: '状态' },
+  { value: 'requester_name', label: '提出人' },
+  { value: 'benefit', label: '收益' },
+  { value: 'solution', label: '解决方案' },
+  { value: 'root_cause', label: '根本原因' },
+  { value: 'story_points', label: '故事点' },
+  { value: 'estimated_hours', label: '预估工时' },
+  { value: 'actual_hours', label: '实际工时' },
+];
+
+const TIME_FIELD_OPTIONS = [
+  { value: 'created_at', label: '创建时间' },
+  { value: 'updated_at', label: '更新时间' },
+  { value: 'planned_start', label: '计划开始时间' },
+  { value: 'planned_end', label: '计划结束时间' },
+  { value: 'actual_end', label: '实际结束时间' },
+  { value: 'merged_at', label: '合并时间' },
+];
+
 const NODE_COLORS: Record<string, string> = {
   start: '#10B981', end: '#EF4444', task: '#3B82F6', condition: '#F59E0B',
 };
@@ -125,9 +150,10 @@ function WorkflowDesignerContent() {
     }
     setSaving(true);
     try {
-      const body = { id: workflowId ? Number(workflowId) : undefined, name, description, nodes, edges };
+      const body = { name, description, nodes, edges };
       const method = workflowId ? 'PUT' : 'POST';
-      const res = await fetch('/api/workflows', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const url = workflowId ? `/api/workflows?id=${workflowId}` : '/api/workflows';
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) {
         const err = await res.json();
         alert(err.error || '保存失败');
@@ -148,7 +174,7 @@ function WorkflowDesignerContent() {
   if (loading) return <div className="p-6 text-gray-400">加载中...</div>;
 
   return (
-    <div className="p-6 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-6 flex flex-col" style={{ height: 'calc(100vh - 56px)' }}>
       {/* Header */}
       <div className="card mb-4"><div className="card-body">
         <div className="flex items-center gap-3">
@@ -170,10 +196,10 @@ function WorkflowDesignerContent() {
 
       <div className="flex-1 flex gap-4 overflow-hidden">
         {/* Canvas */}
-        <div className="flex-1 card">
-          <div className="card-body" style={{ padding: 0, overflow: 'auto', backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }} ref={canvasRef}
+        <div className="flex-1 card flex flex-col min-w-0">
+          <div className="card-body flex-1" style={{ padding: 0, overflow: 'auto', backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }} ref={canvasRef}
             onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
-            <div className="relative" style={{ minWidth: 1400, minHeight: 400, backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+            <div className="relative" style={{ minWidth: 1200, minHeight: 500, backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
               <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: 1400, minHeight: 400 }}>
                 {edges.map((e, i) => {
                   const from = nodes.find(n => n.node_key === e.from_node);
@@ -197,7 +223,34 @@ function WorkflowDesignerContent() {
                   style={{ left: n.pos_x, top: n.pos_y, minWidth: 120, textAlign: 'center', background: NODE_COLORS[n.type] || '#333333', borderColor: selectedNode === n.node_key ? '#000000' : (NODE_COLORS[n.type] || '#333333'), color: 'white' }}
                   onClick={() => handleNodeClick(n.node_key)} onMouseDown={(e) => handleMouseDown(e, n.node_key)}>
                   <div>{n.label}</div>
-                  {n.auto_status && <div className="text-[10px] opacity-80 mt-0.5">→ {STATUS_OPTIONS.find(s => s.value === n.auto_status)?.label || n.auto_status}</div>}
+                  {n.type === 'condition' && n.config?.condition_type && (
+                    <div className="text-[10px] opacity-80 mt-0.5">
+                      {(() => {
+                        const condType = n.config.condition_type;
+                        const condValue = n.config.condition_value || '';
+                        if (condType === 'status') {
+                          const statusLabel = STATUS_OPTIONS.find(s => s.value === condValue)?.label || condValue;
+                          return `状态: ${statusLabel}`;
+                        } else if (condType === 'priority') {
+                          const priorityMap = { high: '高', medium: '中', low: '低' };
+                          return `优先级: ${priorityMap[condValue as keyof typeof priorityMap] || condValue}`;
+                        } else if (condType.startsWith('field_')) {
+                          const [field, value] = condValue.split(':');
+                          const fieldLabel = FIELD_OPTIONS.find(f => f.value === field)?.label || field;
+                          const opMap = { field_eq: '=', field_contains: '包含', field_gt: '>', field_lt: '<' };
+                          return `${fieldLabel} ${opMap[condType as keyof typeof opMap] || condType} ${value || ''}`;
+                        } else if (condType === 'time_gt') {
+                          return `时间>${condValue}`;
+                        } else if (condType === 'time_diff_gt') {
+                          return `时间差>${condValue}`;
+                        } else if (condType === 'time_diff_lt') {
+                          return `时间差<${condValue}`;
+                        }
+                        return condType;
+                      })()}
+                    </div>
+                  )}
+                  {n.type !== 'condition' && n.auto_status && <div className="text-[10px] opacity-80 mt-0.5">→ {STATUS_OPTIONS.find(s => s.value === n.auto_status)?.label || n.auto_status}</div>}
                   {n.assignee_id && <div className="text-[10px] opacity-80">👤 {users.find(u => u.id === n.assignee_id)?.display_name || '?'}</div>}
                 </div>
               ))}
@@ -206,13 +259,13 @@ function WorkflowDesignerContent() {
         </div>
 
         {/* Properties Panel */}
-        <div className="w-72 shrink-0 card">
+        <div className="w-[420px] shrink-0 card flex flex-col" style={{ minWidth: '420px', maxWidth: '600px' }}>
           <div className="card-header"><h3 className="card-title">
             {selectedNodeData ? '节点属性' : selectedEdgeData ? '连线属性' : '属性面板'}
           </h3></div>
-          <div className="card-body">
+          <div className="card-body flex-1 overflow-y-auto">
             {selectedNodeData && (
-              <div className="space-y-4">
+              <div className="space-y-4 pb-4">
                 <Field label="节点名称">
                   <input value={selectedNodeData.label} onChange={e => updateNode(selectedNode!, { label: e.target.value })} className="form-input" />
                 </Field>
@@ -222,11 +275,131 @@ function WorkflowDesignerContent() {
                     <option value="condition">条件</option><option value="end">结束</option>
                   </select>
                 </Field>
-                <Field label="自动设置状态">
-                  <select value={selectedNodeData.auto_status || ''} onChange={e => updateNode(selectedNode!, { auto_status: e.target.value || null })} className="form-input">
-                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                </Field>
+                {selectedNodeData.type === 'condition' ? (
+                  <>
+                    <Field label="条件类型">
+                      <select 
+                        value={selectedNodeData.config?.condition_type || 'status'}
+                        onChange={e => updateNode(selectedNode!, { 
+                          config: { 
+                            ...selectedNodeData.config, 
+                            condition_type: e.target.value 
+                          } 
+                        })}
+                        className="form-input"
+                      >
+                        <option value="status">需求状态</option>
+                        <option value="priority">优先级</option>
+                        <option value="field_eq">字段等于</option>
+                        <option value="field_contains">字段包含</option>
+                        <option value="field_gt">字段大于</option>
+                        <option value="field_lt">字段小于</option>
+                        <option value="time_gt">处理时间超过（天）</option>
+                        <option value="time_diff_gt">时间差大于（天）</option>
+                        <option value="time_diff_lt">时间差小于（天）</option>
+                      </select>
+                    </Field>
+                    <Field label="条件值">
+                      {selectedNodeData.config?.condition_type === 'status' ? (
+                        <select 
+                          value={selectedNodeData.config?.condition_value || ''}
+                          onChange={e => updateNode(selectedNode!, { 
+                            config: { 
+                              ...selectedNodeData.config, 
+                              condition_value: e.target.value 
+                            } 
+                          })}
+                          className="form-input"
+                        >
+                          {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
+                      ) : selectedNodeData.config?.condition_type === 'priority' ? (
+                        <select 
+                          value={selectedNodeData.config?.condition_value || ''}
+                          onChange={e => updateNode(selectedNode!, { 
+                            config: { 
+                              ...selectedNodeData.config, 
+                              condition_value: e.target.value 
+                            } 
+                          })}
+                          className="form-input"
+                        >
+                          <option value="high">高</option>
+                          <option value="medium">中</option>
+                          <option value="low">低</option>
+                        </select>
+                      ) : selectedNodeData.config?.condition_type?.startsWith('field_') ? (
+                        <div className="space-y-2">
+                          <select 
+                            value={selectedNodeData.config?.condition_value?.split(':')[0] || ''}
+                            onChange={e => {
+                              const currentValue = selectedNodeData.config?.condition_value || '';
+                              const parts = currentValue.split(':');
+                              const newValue = parts.length > 1 ? `${e.target.value}:${parts.slice(1).join(':')}` : e.target.value;
+                              updateNode(selectedNode!, { 
+                                config: { 
+                                  ...selectedNodeData.config, 
+                                  condition_value: newValue 
+                                } 
+                              });
+                            }}
+                            className="form-input"
+                          >
+                            <option value="">选择字段</option>
+                            {FIELD_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                          </select>
+                          <input 
+                            value={selectedNodeData.config?.condition_value?.split(':').slice(1).join(':') || ''}
+                            onChange={e => {
+                              const currentValue = selectedNodeData.config?.condition_value || '';
+                              const parts = currentValue.split(':');
+                              const newValue = parts[0] ? `${parts[0]}:${e.target.value}` : e.target.value;
+                              updateNode(selectedNode!, { 
+                                config: { 
+                                  ...selectedNodeData.config, 
+                                  condition_value: newValue 
+                                } 
+                              });
+                            }}
+                            className="form-input" 
+                            placeholder="比较值"
+                          />
+                        </div>
+                      ) : (
+                        <input 
+                          value={selectedNodeData.config?.condition_value || ''}
+                          onChange={e => updateNode(selectedNode!, { 
+                            config: { 
+                              ...selectedNodeData.config, 
+                              condition_value: e.target.value 
+                            } 
+                          })}
+                          className="form-input" 
+                          placeholder="值（例如：7d 表示7天）"
+                        />
+                      )}
+                    </Field>
+                    <Field label="条件描述">
+                      <input 
+                        value={selectedNodeData.config?.description || ''}
+                        onChange={e => updateNode(selectedNode!, { 
+                          config: { 
+                            ...selectedNodeData.config, 
+                            description: e.target.value 
+                          } 
+                        })}
+                        className="form-input" 
+                        placeholder="可选：条件说明"
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <Field label="自动设置状态">
+                    <select value={selectedNodeData.auto_status || ''} onChange={e => updateNode(selectedNode!, { auto_status: e.target.value || null })} className="form-input">
+                      {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <Field label="指派处理人">
                   <select value={selectedNodeData.assignee_id || ''} onChange={e => updateNode(selectedNode!, { assignee_id: e.target.value ? Number(e.target.value) : null })} className="form-input">
                     <option value="">-- 不指派 --</option>
@@ -240,7 +413,7 @@ function WorkflowDesignerContent() {
               </div>
             )}
             {selectedEdgeData && selectedEdge !== null && (
-              <div className="space-y-4">
+              <div className="space-y-4 pb-4">
                 <div className="text-xs text-gray-500">{selectedEdgeData.from_node} → {selectedEdgeData.to_node}</div>
                 <Field label="连线标签">
                   <input value={selectedEdgeData.label} onChange={e => { const ne = [...edges]; ne[selectedEdge] = { ...ne[selectedEdge], label: e.target.value }; setEdges(ne); }} className="form-input" />
@@ -251,6 +424,12 @@ function WorkflowDesignerContent() {
                     <option value="status">需求状态变更为</option>
                     <option value="time_gt">处理时间超过（天）</option>
                     <option value="priority">优先级为</option>
+                    <option value="field_eq">字段等于</option>
+                    <option value="field_contains">字段包含</option>
+                    <option value="field_gt">字段大于</option>
+                    <option value="field_lt">字段小于</option>
+                    <option value="time_diff_gt">时间差大于（天）</option>
+                    <option value="time_diff_lt">时间差小于（天）</option>
                   </select>
                 </Field>
                 <Field label="条件值">
@@ -262,6 +441,37 @@ function WorkflowDesignerContent() {
                     <select value={selectedEdgeData.condition_value} onChange={e => { const ne = [...edges]; ne[selectedEdge] = { ...ne[selectedEdge], condition_value: e.target.value }; setEdges(ne); }} className="form-input">
                       <option value="high">高</option><option value="medium">中</option><option value="low">低</option>
                     </select>
+                  ) : selectedEdgeData.condition_type.startsWith('field_') ? (
+                    <div className="space-y-2">
+                      <select 
+                        value={selectedEdgeData.condition_value?.split(':')[0] || ''}
+                        onChange={e => {
+                          const ne = [...edges];
+                          const currentValue = ne[selectedEdge].condition_value || '';
+                          const parts = currentValue.split(':');
+                          const newValue = parts.length > 1 ? `${e.target.value}:${parts.slice(1).join(':')}` : e.target.value;
+                          ne[selectedEdge] = { ...ne[selectedEdge], condition_value: newValue };
+                          setEdges(ne);
+                        }}
+                        className="form-input"
+                      >
+                        <option value="">选择字段</option>
+                        {FIELD_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                      </select>
+                      <input 
+                        value={selectedEdgeData.condition_value?.split(':').slice(1).join(':') || ''}
+                        onChange={e => {
+                          const ne = [...edges];
+                          const currentValue = ne[selectedEdge].condition_value || '';
+                          const parts = currentValue.split(':');
+                          const newValue = parts[0] ? `${parts[0]}:${e.target.value}` : e.target.value;
+                          ne[selectedEdge] = { ...ne[selectedEdge], condition_value: newValue };
+                          setEdges(ne);
+                        }}
+                        className="form-input" 
+                        placeholder="比较值"
+                      />
+                    </div>
                   ) : (
                     <input value={selectedEdgeData.condition_value} onChange={e => { const ne = [...edges]; ne[selectedEdge] = { ...ne[selectedEdge], condition_value: e.target.value }; setEdges(ne); }} className="form-input" placeholder="值" />
                   )}

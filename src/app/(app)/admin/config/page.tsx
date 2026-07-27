@@ -8,6 +8,7 @@ import { invalidateProjectRoles, invalidateSystemRoles } from '@/lib/use-role-op
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; desc: string }> = {
   general: { label: '基础设置', icon: '⚙️', desc: '系统名称、描述等基本信息' },
   database: { label: '数据库', icon: '🗄️', desc: '数据库引擎选择与 MySQL 连接配置' },
+  memcache: { label: 'Memcache', icon: '💾', desc: '会话存储 Memcache 配置' },
   auth: { label: '注册与认证', icon: '🔐', desc: '用户注册、密码、登录有效期' },
   requirement: { label: '需求设置', icon: '📋', desc: '需求状态、优先级、分类等配置' },
   sla: { label: 'SLA 设置', icon: '⏱️', desc: '超期预警、升级、宽限等 SLA 规则' },
@@ -40,6 +41,10 @@ const PRETTY_KEY_MAP: Record<string, string> = {
   mysql_user: 'MySQL 用户名',
   mysql_password: 'MySQL 密码',
   mysql_database: 'MySQL 数据库名',
+  memcache_enabled: '启用 Memcache',
+  memcache_host: 'Memcache 主机',
+  memcache_port: 'Memcache 端口',
+  memcache_ttl_days: '会话 TTL（天）',
   enable_registration: '开放注册',
   allow_open_registration: '允许开放注册',
   default_role: '默认角色',
@@ -224,7 +229,20 @@ export default function AdminConfigPage() {
                   <p className="text-xs text-gray-500 mt-1">{info.desc}</p>
                 </div>
                 <div className="card-body">
-                  {items.filter((c: any) => !(cat === 'sla' && c.key.startsWith('sla_rules_'))).map((c: any) => (
+                  {items.filter((c: any) => {
+                    // 过滤 SLA 规则（单独面板处理）
+                    if (cat === 'sla' && c.key.startsWith('sla_rules_')) return false;
+                    
+                    // 当数据库类型为 sqlite 时，隐藏 MySQL 相关配置
+                    if (cat === 'database') {
+                      const dbType = values['db_type'] || 'mysql';
+                      if (dbType === 'sqlite' && c.key.startsWith('mysql_')) {
+                        return false;
+                      }
+                    }
+                    
+                    return true;
+                  }).map((c: any) => (
                     <div key={c.key} className="px-6 py-4">
                       <div className="flex items-start justify-between gap-6">
                         <div className="flex-1 min-w-0">

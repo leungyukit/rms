@@ -19,17 +19,18 @@ function translateStatusCodes(text: string): string {
 // Get LLM config from DB
 async function getLLMConfig() {
   const db = getAsyncDb();
-  const get = async (key: string, def: string = '') => {
-    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? def; } catch { return def; }
+  const get = async (key: string) => {
+    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? ''; } catch { return ''; }
   };
   const config = {
-    enabled: (await get('llm_enabled', 'false')) === 'true',
-    apiUrl: await get('llm_api_url', 'https://api.stepfun.com/v1/chat/completions'),
-    apiKey: await get('llm_api_key', ''),
-    model: await get('llm_model', 'step-2-16k'),
-    maxTokens: parseInt(await get('llm_max_tokens', '4096')) || 4096,
-    temperature: parseFloat(await get('llm_temperature', '0.7')) || 0.7,
-    systemPrompt: await get('llm_system_prompt', ''),
+    enabled: (await get('llm_enabled')) === 'true',
+    apiUrl: await get('llm_api_url'),
+    apiKey: await get('llm_api_key'),
+    model: await get('llm_model'),
+    maxTokens: parseInt(await get('llm_max_tokens')) || undefined,
+    temperature: parseFloat(await get('llm_temperature')) || undefined,
+    systemPrompt: await get('llm_system_prompt'),
+    useToolRole: (await get('llm_use_tool_role')) === 'true',
   };
   console.log('[LLM Config] apiUrl:', config.apiUrl, 'model:', config.model);
   return config;
@@ -1379,11 +1380,20 @@ ${config.systemPrompt ? '\n用户自定义指令：' + config.systemPrompt : ''}
       for (const tc of llmResponse.tool_calls) {
         const toolArgs = typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments;
         const result = await executeTool(tc.function.name, toolArgs, user.id);
-        // StepFun 不支持 role: 'tool'，改用 role: 'system' 传递工具结果（比 role: 'user' 更不会被误解为新用户输入）
-        messages.push({
-          role: 'system',
-          content: `【工具 ${tc.function.name} 执行结果】\n参数: ${JSON.stringify(toolArgs)}\n结果: ${JSON.stringify(result, null, 2)}`
-        });
+        if (config.useToolRole) {
+          // 标准 OpenAI 格式：使用 role: "tool" 和 tool_call_id
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify(result)
+          });
+        } else {
+          // 兼容格式：使用 role: "system"（部分服务商不支持 tool 角色）
+          messages.push({
+            role: 'system',
+            content: `【工具 ${tc.function.name} 执行结果】\n参数: ${JSON.stringify(toolArgs)}\n结果: ${JSON.stringify(result, null, 2)}`
+          });
+        }
       }
 
       llmResponse = await callLLMWithRetry(config, messages, TOOLS);
@@ -1428,11 +1438,15 @@ async function callLLM(config: any, messages: any[], tools: any[]) {
   const body: any = {
     model: config.model,
     messages,
-    max_tokens: config.maxTokens,
-    temperature: config.temperature,
     tools,
     tool_choice: 'auto',
   };
+  if (config.maxTokens !== undefined) {
+    body.max_tokens = config.maxTokens;
+  }
+  if (config.temperature !== undefined) {
+    body.temperature = config.temperature;
+  }
 
   console.log('[LLM Call] URL:', config.apiUrl, 'Model:', config.model);
   console.log('[LLM Call] Messages:', JSON.stringify(messages).slice(0, 1000));

@@ -5,14 +5,14 @@ import { getCurrentUser } from '@/lib/auth';
 // Get LLM config
 async function getLLMConfig() {
   const db = getAsyncDb();
-  const get = async (key: string, def: string = ''): Promise<string> => {
-    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? def; } catch { return def; }
+  const get = async (key: string): Promise<string> => {
+    try { return ((await db.prepare('SELECT value FROM system_config WHERE `key` = ?').get(key)) as any)?.value ?? ''; } catch { return ''; }
   };
   return {
-    enabled: (await get('llm_enabled', 'false')) === 'true',
-    apiUrl: await get('llm_api_url', 'https://api.stepfun.com/v1/chat/completions'),
-    apiKey: await get('llm_api_key', ''),
-    model: await get('llm_model', 'step-2-16k'),
+    enabled: (await get('llm_enabled')) === 'true',
+    apiUrl: await get('llm_api_url'),
+    apiKey: await get('llm_api_key'),
+    model: await get('llm_model'),
   };
 }
 

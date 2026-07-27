@@ -273,7 +273,18 @@ class SqliteAsyncDatabase {
   async exec(sql: string): Promise<void> { this.inner.exec(sql); }
   async transaction(fn: (...args: any[]) => any): Promise<(...args: any[]) => Promise<any>> {
     return async (...args: any[]) => {
-      return this.inner.transaction(() => fn(...args))(...args);
+      // better-sqlite3 的 transaction 期望同步函数，但我们需要支持异步
+      // 所以我们需要手动处理事务
+      const conn = this.inner;
+      conn.exec('BEGIN TRANSACTION');
+      try {
+        const result = await fn(...args);
+        conn.exec('COMMIT');
+        return result;
+      } catch (e) {
+        conn.exec('ROLLBACK');
+        throw e;
+      }
     };
   }
 }
