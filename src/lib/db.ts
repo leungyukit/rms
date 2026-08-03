@@ -305,7 +305,12 @@ class SqliteAsyncPreparedStatement {
 
 // SQLite 事务串行化状态（见下方 transaction 注释）
 let sqliteTxQueue: Promise<void> = Promise.resolve();
-let sqliteTxDepth = 0;
+// 2026-08-03 二次修正：原来用模块级 `let sqliteTxDepth = 0` 判断“是否已在事务中”，
+// 但那是全进程共享的计数器 —— 事务 A 在 await 期间，**另一个并发请求** B 调 transaction()
+// 会看到 depth>0，误判自己身处 A 的事务里，于是跳过排队、不发 BEGIN，
+// 直接把 B 的写入混进 A 的事务：A 回滚时连 B 的数据一起干掉（正是本次要修的原 bug）。
+// 改用 AsyncLocalStorage，与 MySQL 侧保持一致：嵌套判断只在同一异步调用链内成立。
+const sqliteTxStore = new AsyncLocalStorage<{ depth: number }>();
 
 class SqliteAsyncDatabase {
   private inner: any;
@@ -320,12 +325,13 @@ class SqliteAsyncDatabase {
    * 原实现：BEGIN 后 `await fn()`，而 better-sqlite3 是同步的 —— await 让出事件循环时，
    * 同进程其他并发请求的写入会被裹进这个事务，回滚时把别人的数据一起干掉。
    * 现加串行化互斥锁：同一时刻只允许一个事务，其余排队，消除交错污染。
-   * 同时支持嵌套复用（内层直接参与外层事务，不再重复 BEGIN）。
+   * 嵌套复用通过 AsyncLocalStorage 判定（仅同一异步链内视为嵌套），避免并发请求误判。
    */
   async transaction(fn: (...args: any[]) => any): Promise<(...args: any[]) => Promise<any>> {
     return async (...args: any[]) => {
-      if (sqliteTxDepth > 0) {
-        // 已在事务中 → 直接参与外层事务
+      const ctx = sqliteTxStore.getStore();
+      if (ctx && ctx.depth > 0) {
+        // 同一异步链内的嵌套事务 → 直接参与外层事务，不重复 BEGIN
         return await fn(...args);
       }
       // 排队：等前一个事务彻底结束
@@ -335,17 +341,20 @@ class SqliteAsyncDatabase {
       await myTurn;
 
       const conn = this.inner;
-      sqliteTxDepth++;
-      conn.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
-        const result = await fn(...args);
-        conn.exec('COMMIT');
-        return result;
-      } catch (e) {
-        try { conn.exec('ROLLBACK'); } catch { /* 已自动回滚时忽略 */ }
-        throw e;
+        return await sqliteTxStore.run({ depth: 1 }, async () => {
+          conn.exec('BEGIN IMMEDIATE TRANSACTION');
+          try {
+            const result = await fn(...args);
+            conn.exec('COMMIT');
+            return result;
+          } catch (e) {
+            try { conn.exec('ROLLBACK'); } catch { /* 已自动回滚时忽略 */ }
+            throw e;
+          }
+        });
       } finally {
-        sqliteTxDepth--;
+        // 无论成功失败都必须释放队列，否则后续所有事务永久卡死
         release();
       }
     };
