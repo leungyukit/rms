@@ -107,10 +107,10 @@ export async function POST(req: NextRequest) {
   // 写行明细
   const stmt = db.prepare(`INSERT INTO requirement_import_rows(import_id, row_no, raw_json, normalized_json, status, error_message) VALUES (?,?,?,?,?,?)`);
   if (rowInserts.length) {
-    const importTx = await db.transaction(() => {
-      for (const r of rowInserts) stmt.run(importId, r.row_no, r.raw_json, r.normalized_json, r.status, r.error_message || null);
+    const importTx = await db.transaction(async () => {
+      for (const r of rowInserts) await stmt.run(importId, r.row_no, r.raw_json, r.normalized_json, r.status, r.error_message || null);
     });
-    importTx();
+    await importTx();
   }
 
   // dry_run 模式：不 commit

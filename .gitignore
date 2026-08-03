@@ -17,6 +17,9 @@ data/rms.db-shm
 data/rms.db-wal
 data/chat-sessions/
 
+# Secrets (2026-08-03)
+.jwt_secret
+
 # Logs and temp files
 *.log
 cookies.txt

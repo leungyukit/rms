@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb, isMysqlEnabled } from '@/lib/db';
 import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
 
+// 敏感配置项（2026-08-03）：这些 key 的值不得通过 API 明文返回。
+const SECRET_CONFIG_KEYS = new Set([
+  'llm_api_key',
+  'asr_api_key',
+  'tts_api_key',
+  'wecom_secret',
+  'feishu_app_secret',
+  'dingtalk_app_secret',
+  'mysql_password',
+  'openclaw_gateway_token',
+]);
+
+const SECRET_PLACEHOLDER = '********';
+
+function isSecretConfigKey(key: string): boolean {
+  if (SECRET_CONFIG_KEYS.has(key)) return true;
+  // 兼容未来新增项：名字里带 secret/token/password/api_key 的一律当敏感处理
+  return /(secret|token|password|api_key|apikey)/i.test(key);
+}
+
 const DEFAULT_CONFIGS = [
   // 基础设置
   { key: 'system_name', value: 'RMS 用户需求管理系统', label: '系统名称', desc: '显示在登录页和侧边栏的系统名称', cat: 'general', type: 'text', sort: 1 },
@@ -177,7 +197,7 @@ async function ensureConfigTable() {
   } else {
     const stmt = db.prepare('INSERT OR REPLACE INTO system_config (key, value, label, description, category, type, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const d of DEFAULT_CONFIGS) {
-      stmt.run(d.key, d.value, d.label, d.desc, d.cat, d.type, d.sort);
+      await stmt.run(d.key, d.value, d.label, d.desc, d.cat, d.type, d.sort);
     }
   }
 }
@@ -188,16 +208,30 @@ export async function GET() {
 
   await ensureConfigTable();
   const db = getAsyncDb();
-  const rows = (await db.prepare('SELECT * FROM system_config ORDER BY category, sort_order').all());
+  const rows = (await db.prepare('SELECT * FROM system_config ORDER BY category, sort_order').all()) as any[];
+
+  // 安全修复（2026-08-03）：原实现把 system_config 全表明文返回给任意登录用户，
+  // 其中含 llm_api_key / asr_api_key / tts_api_key / *_app_secret / wecom_secret /
+  // mysql_password / openclaw_gateway_token 等凭据。
+  // 现在：非管理员只能看到非敏感项，且敏感项一律脱敏为占位符。
+  const admin = isGlobalAdmin(user.roles);
+  const visible = rows
+    .filter((row) => admin || !isSecretConfigKey(row.key))
+    .map((row) => {
+      if (!isSecretConfigKey(row.key)) return row;
+      const hasValue = !!(row.value && String(row.value).length > 0);
+      // 管理员也不回明文，只告知是否已配置（避免前端页面/日志/缓存二次泄露）
+      return { ...row, value: hasValue ? SECRET_PLACEHOLDER : '', is_secret: true, has_value: hasValue };
+    });
 
   // Group by category
   const grouped: Record<string, any[]> = {};
-  for (const row of rows as any[]) {
+  for (const row of visible) {
     if (!grouped[row.category]) grouped[row.category] = [];
     grouped[row.category].push(row);
   }
 
-  return NextResponse.json({ configs: rows, grouped });
+  return NextResponse.json({ configs: visible, grouped });
 }
 
 export async function PUT(req: NextRequest) {
@@ -222,6 +256,8 @@ export async function PUT(req: NextRequest) {
   // 原代码同步调用 updateTx(configs) 会报 "updateTx is not a function"。
   const updateTx = await db.transaction(async (items: Record<string, string>) => {
     for (const [key, value] of Object.entries(items)) {
+      // 配套 GET 脱敏（2026-08-03）：前端回传占位符表示“未修改”，跳过以免把凭据写成 '********'
+      if (isSecretConfigKey(key) && String(value) === SECRET_PLACEHOLDER) continue;
       await stmt.run(String(value), key);
     }
   });

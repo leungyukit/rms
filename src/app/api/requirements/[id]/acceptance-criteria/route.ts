@@ -78,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let inserted = 0;
   for (let i = 0; i < body.criteria.length; i++) {
     const c = body.criteria[i];
-    insert.run(
+    await insert.run(
       id,
       i + 1,
       String(c.criterion_text).trim(),

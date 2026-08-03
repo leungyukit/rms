@@ -68,82 +68,77 @@ export async function POST(req: NextRequest) {
     attachments: 0, comments: 0, children: 0, timeline: 0, tags: 0, relations: 0,
   };
 
-  // better-sqlite3 / MySQL 抽象层的 transaction 适配
   const exec = async (sql: string, ...params: any[]) => (await db.prepare(sql).run(...params));
   const all = async (sql: string, ...params: any[]) => (await db.prepare(sql).all(...params)) as any[];
 
-  // 简化版事务：依赖 db.ts 抽象；MySQL 模式下走 mysqlExecMulti
-  // 这里我们用 try/catch 包裹，整体失败回滚：先不写中间状态，遇到错就抛出
-  try {
+  // 真事务（2026-08-03 修复）：
+  // 原实现只有 try/catch，且 exec() 全程未 await —— 任一步失败时前面的 UPDATE 已提交，
+  // 需求被“半合并”（附件迁走了、merged_into 没写上），数据永久错乱且无法回滚。
+  // 现统一走 db.transaction()：MySQL 用 AsyncLocalStorage 绑同一连接，SQLite 走串行化 BEGIN IMMEDIATE。
+  const mergeTx = await db.transaction(async () => {
     for (const dup of duplicates) {
       // 附件
       if (mergeFlags.attachments) {
-        // 附件表是否有 requirement_id 列？查下
         const attsBefore = (await all('SELECT id FROM attachments WHERE requirement_id = ?', dup.id) || []).length;
-        exec('UPDATE attachments SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
+        await exec('UPDATE attachments SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
         migrationSummary.attachments += attsBefore;
       }
       // 评论
       if (mergeFlags.comments) {
         const cBefore = (await all('SELECT id FROM requirement_comments WHERE requirement_id = ?', dup.id) || []).length;
-        try {
-          exec('UPDATE requirement_comments SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
-        } catch (e) {
-          // 兼容表名 comments
-          try { exec('UPDATE comments SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id); } catch {}
-        }
+        await exec('UPDATE requirement_comments SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
         migrationSummary.comments += cBefore;
       }
       // 子任务
       if (mergeFlags.children) {
         const chBefore = (await all('SELECT id FROM requirements WHERE parent_id = ?', dup.id) || []).length;
-        exec('UPDATE requirements SET parent_id = ? WHERE parent_id = ?', primaryId, dup.id);
+        await exec('UPDATE requirements SET parent_id = ? WHERE parent_id = ?', primaryId, dup.id);
         migrationSummary.children += chBefore;
       }
       // 时间线
       if (mergeFlags.timeline) {
         const tBefore = (await all('SELECT id FROM requirement_timeline WHERE requirement_id = ?', dup.id) || []).length;
-        try {
-          exec('UPDATE requirement_timeline SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
-        } catch (e) {
-          // 兼容 timeline
-          try { exec('UPDATE timeline SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id); } catch {}
-        }
+        await exec('UPDATE requirement_timeline SET requirement_id = ? WHERE requirement_id = ?', primaryId, dup.id);
         migrationSummary.timeline += tBefore;
       }
-      // 标签
+      // 标签：只迁移主需求还没有的，避开唯一键冲突（原来的 ON CONFLICT/INSERT IGNORE 双写在两种方言下都不可靠）
       if (mergeFlags.tags) {
         const dupTags = await all('SELECT tag_id FROM requirement_tags WHERE requirement_id = ?', dup.id);
+        const primaryTags = new Set(
+          (await all('SELECT tag_id FROM requirement_tags WHERE requirement_id = ?', primaryId)).map((t: any) => t.tag_id)
+        );
+        let moved = 0;
         for (const t of dupTags) {
-          try {
-            exec('INSERT INTO requirement_tags (requirement_id, tag_id) VALUES (?, ?) ON CONFLICT DO NOTHING', primaryId, t.tag_id);
-            if ((db as any).driver?.name?.includes('mysql') || true) {
-              // MySQL 没有 ON CONFLICT，用 INSERT IGNORE
-              exec('INSERT IGNORE INTO requirement_tags (requirement_id, tag_id) VALUES (?, ?)', primaryId, t.tag_id);
-            }
-          } catch {}
+          if (primaryTags.has(t.tag_id)) continue;
+          await exec('INSERT INTO requirement_tags (requirement_id, tag_id) VALUES (?, ?)', primaryId, t.tag_id);
+          primaryTags.add(t.tag_id);
+          moved++;
         }
-        exec('DELETE FROM requirement_tags WHERE requirement_id = ?', dup.id);
-        migrationSummary.tags += dupTags.length;
+        await exec('DELETE FROM requirement_tags WHERE requirement_id = ?', dup.id);
+        migrationSummary.tags += moved;
       }
 
       // 关系表登记
-      exec(`INSERT INTO requirement_relations (source_id, target_id, relation_type) VALUES (?, ?, 'duplicate_of')`, dup.id, primaryId);
+      await exec(`INSERT INTO requirement_relations (source_id, target_id, relation_type) VALUES (?, ?, 'duplicate_of')`, dup.id, primaryId);
       migrationSummary.relations += 1;
 
       // 标记合并
       const newTitle = dup.title + ` [重复-已合并到#${primaryId}]`;
-      exec('UPDATE requirements SET merged_into = ?, merged_at = CURRENT_TIMESTAMP, title = ? WHERE id = ?', primaryId, newTitle, dup.id);
+      await exec('UPDATE requirements SET merged_into = ?, merged_at = CURRENT_TIMESTAMP, title = ? WHERE id = ?', primaryId, newTitle, dup.id);
 
       // 写 status_log
-      exec(`INSERT INTO status_log (requirement_id, old_status, new_status, changed_by, note) VALUES (?, ?, 'closed', ?, ?)`,
+      await exec(`INSERT INTO status_log (requirement_id, old_status, new_status, changed_by, note) VALUES (?, ?, 'closed', ?, ?)`,
         dup.id, dup.status, user.id, body.note || `合并到 #${primaryId}`);
     }
+  });
+
+  try {
+    await mergeTx();
   } catch (e: any) {
-    return NextResponse.json({ error: '合并失败：' + (e?.message || '未知错误') }, { status: 500 });
+    return NextResponse.json({ error: '合并失败（已整体回滚）：' + (e?.message || '未知错误') }, { status: 500 });
   }
 
-  logAudit(user.id, user.username, 'merge_requirements',
+  await logAudit(user.id, user.username, 'merge_requirements',
     `合并 ${dupIds.length} 条到 #${primaryId}：${JSON.stringify(migrationSummary)}。备注：${body.note || ''}`);
 
   return NextResponse.json({ success: true, primary_id: primaryId, merged_count: dupIds.length, summary: migrationSummary });

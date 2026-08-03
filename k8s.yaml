@@ -87,6 +87,13 @@ spec:
                   key: mysql-password
             - name: MYSQL_DATABASE
               value: "rms"
+            # JWT 签名密钥（2026-08-03 新增）：应用启动时强校验，未设或 <32 位在
+            # NODE_ENV=production 下直接拒绝启动。必须先创建 secret，见文件末尾说明。
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: jwt-secret
             - name: OPENCLAW_ENABLED
               value: "true"
             - name: FEISHU_APP_ID
@@ -166,17 +173,33 @@ spec:
       nodePort: 31211
 
 ---
-# Optional: Create secrets with your actual values
-# kubectl create secret generic rms-secrets \
-#   --from-literal=mysql-password=rms123456 \
-#   --from-literal=feishu-app-id=your_app_id \
-#   --from-literal=feishu-app-secret=your_app_secret
+# Secret（2026-08-03 修复）
+#
+# 原来这里用 stringData 明文写死 mysql-password: "rms123456" 并提交进 git ——
+# 等于生产数据库密码全仓库公开。现改为不含任何真实值的模板：
+# 部署前请在集群里自行创建/覆盖该 secret，不要把真实值写回本文件。
+#
+#   kubectl create secret generic rms-secrets \
+#     --from-literal=mysql-password="$(openssl rand -base64 24)" \
+#     --from-literal=jwt-secret="$(openssl rand -hex 32)" \
+#     --from-literal=feishu-app-id=your_app_id \
+#     --from-literal=feishu-app-secret=your_app_secret \
+#     -n rms
+#
+# 已存在时更新（例如轮换 jwt-secret，注意会使所有登录态失效）：
+#   kubectl create secret generic rms-secrets ... --dry-run=client -o yaml | kubectl apply -f -
+#
+# 注意：jwt-secret 必须 >= 32 位，否则应用在生产模式下拒绝启动。
+# 若下面这段被 apply，缺失的键会导致 Pod 卡在 CreateContainerConfigError —— 属预期行为，
+# 提醒你先把真实 secret 建好，而不是静默用弱默认值上线。
 apiVersion: v1
 kind: Secret
 metadata:
   name: rms-secrets
+  annotations:
+    rms.io/managed-externally: "true"
+    rms.io/note: "Do NOT commit real values here. Create via kubectl create secret."
 type: Opaque
-stringData:
-  mysql-password: "rms123456"
-  feishu-app-id: ""
-  feishu-app-secret: ""
+# 故意留空：由 kubectl create secret 提供真实值。
+# 若你确实要用本文件管理，请改用 sealed-secrets / SOPS / External Secrets，别写明文。
+stringData: {}

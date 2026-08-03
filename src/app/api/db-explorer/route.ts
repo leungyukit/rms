@@ -1,7 +1,17 @@
 import { getAsyncDb, isMysqlEnabled } from '@/lib/db';
+import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
+import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
+    // 安全修复（2026-08-03）：原代码完全无鉴权，任何人可枚举全库表结构
+    // （含 users / access_tokens / system_config 的字段定义），等于送一份攻击地图。
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    if (!isGlobalAdmin(user.roles)) {
+      return NextResponse.json({ error: '需要全局管理员权限' }, { status: 403 });
+    }
+
     const db = getAsyncDb();
     const tables = [];
     

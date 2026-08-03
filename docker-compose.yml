@@ -22,8 +22,11 @@ services:
     environment:
       # MySQL
       MYSQL_USER: ${MYSQL_USER:-rms}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rms123456}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD 必需：请在 .env 或环境变量里设强密码，不再使用 rms123456 默认值}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-rms}
+      # JWT（2026-08-03 新增）：留空时由 entrypoint.sh 生成并落在持久卷，
+      # 但生产建议显式注入：JWT_SECRET=$(openssl rand -hex 32)
+      JWT_SECRET: ${JWT_SECRET:-}
       # RMS
       RMS_PORT: 3800
       # OpenClaw

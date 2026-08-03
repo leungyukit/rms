@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
+import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
 
 export async function GET() {
   try {
+    // 安全修复（2026-08-03）：原代码在 /api/admin/ 下却完全无鉴权，
+    // 任何未登录访客可读取服务器上的 skill 文件（含脚本源码）。
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    if (!isGlobalAdmin(user.roles)) {
+      return NextResponse.json({ error: '需要全局管理员权限' }, { status: 403 });
+    }
+
     const skillDir = path.join(process.env.HOME || '/home/itd3', '.openclaw/plugin-skills/rms');
     
     // Read SKILL.md
@@ -35,6 +44,7 @@ export async function GET() {
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: '读取 Skill 文件失败: ' + e.message }, { status: 500 });
+    console.error('[skill-download] error:', e?.message);
+    return NextResponse.json({ error: '读取 Skill 文件失败' }, { status: 500 });
   }
 }
