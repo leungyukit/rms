@@ -20,13 +20,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // 简化：直接 update（真实生产应走专门的状态变更逻辑）
   (await db.prepare(`UPDATE requirements SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(newStatus, id));
-  // status_log 在 SQLite 用 old_status/new_status，MySQL 用 from_status/to_status
-  const isMysql = !!process.env.MYSQL_HOST;
-  if (isMysql) {
-    (await db.prepare(`INSERT INTO status_log(requirement_id, from_status, to_status, changed_by, changed_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(id, cur.status, newStatus, user.id));
-  } else {
-    (await db.prepare(`INSERT INTO status_log(requirement_id, old_status, new_status, changed_by, changed_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(id, cur.status, newStatus, user.id));
-  }
+  // status_log 统一用 old_status/new_status。
+  // 修复（2026-08-03）：原代码在 MySQL 分支写 from_status/to_status，但两边 schema
+  // （docker/rms-init.sql:1303 与 data/rms.db）都只有 old_status/new_status，也无任何迁移
+  // 会添加 from/to 列 —— 导致生产（DB_TYPE=mysql）每次改状态都撞 ER_BAD_FIELD_ERROR，
+  // 状态变更历史全部丢失（时间线/停滞检测/燃尽图失去数据源）。
+  (await db.prepare(`INSERT INTO status_log(requirement_id, old_status, new_status, changed_by, changed_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(id, cur.status, newStatus, user.id));
 
   // 触发 AI 知识
   const jobId = triggerAiKnowledgeJob(parseInt(id), cur.status, newStatus, user.id);

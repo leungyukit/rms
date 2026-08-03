@@ -120,11 +120,11 @@ export async function POST(req: NextRequest) {
     try {
       let projectId = null;
       if (item.project_name) {
-        const proj = getProjectId.get(`%${item.project_name}%`) as any;
+        const proj = (await getProjectId.get(`%${item.project_name}%`)) as any;
         if (proj) projectId = proj.id;
       }
 
-      insertStmt.run(
+      await insertStmt.run(
         item.title || `导入需求 ${i + 1}`,
         item.description || '',
         item.business_unit || '',

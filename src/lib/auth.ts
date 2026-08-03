@@ -4,7 +4,27 @@ import crypto from 'crypto';
 import { cookies, headers } from 'next/headers';
 import { getDb, isMysqlEnabled } from './db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'rms-secret-key-change-in-production';
+const JWT_SECRET = (() => {
+  const s = process.env.JWT_SECRET;
+  // 安全修复（2026-08-03）：原代码回退到硬编码默认串
+  // 'rms-secret-key-change-in-production'，而部署链路（start.sh / k8s.yaml /
+  // docker-compose.yml / entrypoint.sh）从未设过 JWT_SECRET —— 等于全网公开的密钥，
+  // 任何人可离线签发 admin token。现改为：生产必须显式配置，缺失则拒绝启动。
+  if (!s || s.length < 32) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'JWT_SECRET 未设置或长度不足 32 位。生产环境必须配置强随机密钥，' +
+        '例如：export JWT_SECRET="$(openssl rand -hex 32)"'
+      );
+    }
+    // 非生产：每次启动随机生成，避免固定默认密钥被利用（代价：重启后需重新登录）
+    const dev = crypto.randomBytes(32).toString('hex');
+    // eslint-disable-next-line no-console
+    console.warn('[auth] JWT_SECRET 未设置，已为本次进程生成临时密钥（重启后所有 token 失效）。');
+    return dev;
+  }
+  return s;
+})();
 const TOKEN_NAME = 'rms_token';
 const EXPIRES_IN = '7d';
 
@@ -101,7 +121,11 @@ export async function setAuthCookie(token: string) {
   const cookieStore = await cookies();
   cookieStore.set(TOKEN_NAME, token, {
     httpOnly: true,
-    secure: false,
+    // 修复（2026-08-03）：原为硬编码 false，HTTPS 下 cookie 仍可明文传输。
+    // 生产开启 secure；内网 HTTP 部署可用 COOKIE_SECURE=false 显式关闭。
+    secure: process.env.COOKIE_SECURE
+      ? process.env.COOKIE_SECURE === 'true'
+      : process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 7 * 24 * 3600,
     path: '/',

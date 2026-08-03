@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     const insertAccess = db.prepare('INSERT INTO user_project_access (user_id, project_id, role_in_project) VALUES (?, ?, ?)');
     for (const pa of project_access) {
       if (pa.project_id) {
-        insertAccess.run(userId, pa.project_id, pa.role_in_project || 'member');
+        await insertAccess.run(userId, pa.project_id, pa.role_in_project || 'member');
       }
     }
   }
@@ -124,7 +124,7 @@ export async function PUT(req: NextRequest) {
     const insertAccess = db.prepare('INSERT INTO user_project_access (user_id, project_id, role_in_project) VALUES (?, ?, ?)');
     for (const pa of project_access) {
       if (pa.project_id) {
-        insertAccess.run(id, pa.project_id, pa.role_in_project || 'viewer');
+        await insertAccess.run(id, pa.project_id, pa.role_in_project || 'viewer');
       }
     }
   }

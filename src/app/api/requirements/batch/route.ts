@@ -76,15 +76,15 @@ export async function POST(req: NextRequest) {
       );
 
       const reqId = result.lastInsertRowid as number;
-      insertLog.run(reqId, status, user.id);
+      await insertLog.run(reqId, status, user.id);
 
       // Tags
       if (r.tags) {
         const tagNames = r.tags.split(/[,，\s]+/).filter(Boolean);
         for (const tn of tagNames) {
-          createTag.run(tn.trim());
-          const t = findTag.get(tn.trim()) as any;
-          if (t) insertTag.run(reqId, t.id);
+          await createTag.run(tn.trim());
+          const t = (await findTag.get(tn.trim())) as any;
+          if (t) await insertTag.run(reqId, t.id);
         }
       }
 

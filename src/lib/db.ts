@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { AsyncLocalStorage } from 'async_hooks';
 
 export const STATUS_MAP: Record<string, string> = {
   received_not_evaluated: '仅接收，未评估',
@@ -81,13 +82,40 @@ function getSqliteDb(): Database.Database {
   return sqliteDb;
 }
 
+/**
+ * 执行 SQL（同步路径）。
+ *
+ * 安全修复（2026-08-03）：原实现把 SQL 拼进 `sh -c "mysql ... -e \"<SQL>\""`，
+ * 转义漏了 `$`，导致 `$(...)` 命令替换可在服务器上执行任意命令（RCE）。
+ * 现改为：
+ *   1. execFileSync 直接调用二进制，不经过 shell → 无命令替换、无管道、无重定向；
+ *   2. SQL 通过 stdin 传入，不再作为命令行参数 → SQL 内容与命令行彻底隔离；
+ *   3. 密码走 MYSQL_PWD 环境变量 → 不出现在进程命令行（ps 可见）里。
+ */
 function mysqlExec(sql: string): string {
   try {
-    const escaped = sql.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/`/g, '\\`');
-    const cmd = `mysql -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} -N -B -e "${escaped}" 2>/dev/null`;
-    const out = execSync(cmd, { encoding: 'utf8', timeout: 10000 }).trim();
-    return out;
+    const out = execFileSync(
+      'mysql',
+      [
+        '-h', MYSQL_HOST,
+        '-P', String(MYSQL_PORT),
+        '-u', MYSQL_USER,
+        MYSQL_DATABASE,
+        '-N', '-B',
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 10000,
+        input: sql,
+        env: { ...process.env, MYSQL_PWD: MYSQL_PASSWORD },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
+    return (out || '').trim();
   } catch (e: any) {
+    // 原实现静默返回 ''，导致上层完全看不到 DB 错误。至少留一条日志。
+    // eslint-disable-next-line no-console
+    console.error('[db.mysqlExec] failed:', e?.stderr?.toString?.() || e?.message || String(e));
     return '';
   }
 }
@@ -113,17 +141,31 @@ function parseMysqlRows(output: string, columns: string[]): any[] {
   });
 }
 
+/**
+ * SQL 字面量转义（仅用于 SQL 层，不再承担 shell 转义职责）。
+ * 覆盖 MySQL 需要转义的全部字符，含 \n \r \x1a 与双引号。
+ */
 function escapeMysqlValue(val: any): string {
   if (val === null || val === undefined) return 'NULL';
-  if (typeof val === 'number') return String(val);
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return 'NULL';
+    return String(val);
+  }
   if (typeof val === 'boolean') return val ? '1' : '0';
+  if (val instanceof Date) {
+    return "'" + val.toISOString().replace(/T/, ' ').replace(/\.\d+Z$/, '') + "'";
+  }
   const str = String(val);
   let result = '';
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
     if (ch === '\\') result += '\\\\';
     else if (ch === "'") result += "\\'";
-    else if (ch === '\0') result += '';
+    else if (ch === '"') result += '\\"';
+    else if (ch === '\n') result += '\\n';
+    else if (ch === '\r') result += '\\r';
+    else if (ch === '\0') result += '\\0';
+    else if (ch === '\x1a') result += '\\Z';
     else result += ch;
   }
   return "'" + result + "'";
@@ -158,53 +200,46 @@ function getMysql2Pool() {
   return _mysql2Pool;
 }
 
+/**
+ * 事务上下文（2026-08-03 修复）。
+ *
+ * 原实现的 transaction() 单独取一个连接发 START TRANSACTION，但业务 SQL 全走
+ * pool.query()（另一个连接），事务连接在那空转，业务语句全部自动提交，
+ * ROLLBACK 回滚的是空事务 —— 所有“事务保护”都是假的。
+ * 现用 AsyncLocalStorage 把事务连接绑到异步上下文，事务内所有语句自动走同一连接。
+ */
+const mysqlTxStore = new AsyncLocalStorage<any>();
+
 class MySqlAsyncPreparedStatement {
   private baseSql: string;
   constructor(sql: string) {
     this.baseSql = sql;
-  }
-  private escapeVal(val: any): string {
-    if (val === null || val === undefined) return 'NULL';
-    if (typeof val === 'number') return String(val);
-    if (typeof val === 'boolean') return val ? '1' : '0';
-    if (val instanceof Date) return "'" + val.toISOString().replace(/T/, ' ').replace(/\.\d+Z$/, '') + "'";
-    const str = String(val);
-    let result = '';
-    for (let i = 0; i < str.length; i++) {
-      const ch = str[i];
-      if (ch === '\\') result += '\\\\';
-      else if (ch === "'") result += "\\'";
-      else if (ch === '\0') result += '';
-      else if (ch === '\n') result += '\\n';
-      else if (ch === '\r') result += '\\r';
-      else result += ch;
-    }
-    return "'" + result + "'";
   }
   private buildSql(params: any[]): string {
     if (params.length === 0) return this.baseSql;
     let i = 0;
     return this.baseSql.replace(/\?/g, () => {
       if (i >= params.length) return '?';
-      return this.escapeVal(params[i++]);
+      return escapeMysqlValue(params[i++]);
     });
   }
+  /** 事务内返事务连接，否则返连接池 */
+  private runner(): any {
+    return mysqlTxStore.getStore() || getMysql2Pool();
+  }
   async get(...params: any[]): Promise<any> {
-    const pool = getMysql2Pool();
     const sql = this.buildSql(params);
-    const [rows] = await pool.query(sql);
+    const [rows] = await this.runner().query(sql);
     return rows[0];
   }
   async all(...params: any[]): Promise<any[]> {
-    const pool = getMysql2Pool();
     const sql = this.buildSql(params);
-    const [rows] = await pool.query(sql);
+    const [rows] = await this.runner().query(sql);
     return rows as any[];
   }
   async run(...params: any[]): Promise<{ changes: number; lastInsertRowid: number }> {
-    const pool = getMysql2Pool();
     const sql = this.buildSql(params);
-    const [result] = await pool.query(sql);
+    const [result] = await this.runner().query(sql);
     return { changes: result.affectedRows || 0, lastInsertRowid: result.insertId || 0 };
   }
 }
@@ -214,23 +249,27 @@ class MySqlAsyncDatabase {
     return new MySqlAsyncPreparedStatement(sql);
   }
   async exec(sql: string): Promise<void> {
-    const pool = getMysql2Pool();
+    const runner = mysqlTxStore.getStore() || getMysql2Pool();
     const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
     for (const stmt of stmts) {
-      await pool.query(stmt);
+      await runner.query(stmt);
     }
   }
   async transaction(fn: (...args: any[]) => any): Promise<(...args: any[]) => Promise<any>> {
     return async (...args: any[]) => {
-      const pool = getMysql2Pool();
-      const conn = await pool.getConnection();
+      // 已在事务中 → 直接参与外层事务，不嵌套开新事务
+      const existing = mysqlTxStore.getStore();
+      if (existing) return await fn(...args);
+
+      const conn = await getMysql2Pool().getConnection();
       try {
-        await conn.query('START TRANSACTION');
-        const result = await fn(...args);
-        await conn.query('COMMIT');
+        await conn.beginTransaction();
+        // 关键：在 store 上下文内执行，使 fn 里所有语句走同一 conn
+        const result = await mysqlTxStore.run(conn, () => fn(...args));
+        await conn.commit();
         return result;
       } catch (e) {
-        await conn.query('ROLLBACK');
+        try { await conn.rollback(); } catch { /* 连接已断时忽略 */ }
         throw e;
       } finally {
         conn.release();
@@ -264,6 +303,10 @@ class SqliteAsyncPreparedStatement {
   }
 }
 
+// SQLite 事务串行化状态（见下方 transaction 注释）
+let sqliteTxQueue: Promise<void> = Promise.resolve();
+let sqliteTxDepth = 0;
+
 class SqliteAsyncDatabase {
   private inner: any;
   constructor() { this.inner = getSqliteDb(); }
@@ -271,19 +314,39 @@ class SqliteAsyncDatabase {
     return new SqliteAsyncPreparedStatement(this.inner.prepare(sql));
   }
   async exec(sql: string): Promise<void> { this.inner.exec(sql); }
+  /**
+   * 事务（2026-08-03 修复）。
+   *
+   * 原实现：BEGIN 后 `await fn()`，而 better-sqlite3 是同步的 —— await 让出事件循环时，
+   * 同进程其他并发请求的写入会被裹进这个事务，回滚时把别人的数据一起干掉。
+   * 现加串行化互斥锁：同一时刻只允许一个事务，其余排队，消除交错污染。
+   * 同时支持嵌套复用（内层直接参与外层事务，不再重复 BEGIN）。
+   */
   async transaction(fn: (...args: any[]) => any): Promise<(...args: any[]) => Promise<any>> {
     return async (...args: any[]) => {
-      // better-sqlite3 的 transaction 期望同步函数，但我们需要支持异步
-      // 所以我们需要手动处理事务
+      if (sqliteTxDepth > 0) {
+        // 已在事务中 → 直接参与外层事务
+        return await fn(...args);
+      }
+      // 排队：等前一个事务彻底结束
+      const myTurn = sqliteTxQueue;
+      let release: () => void = () => {};
+      sqliteTxQueue = new Promise<void>((res) => { release = res; });
+      await myTurn;
+
       const conn = this.inner;
-      conn.exec('BEGIN TRANSACTION');
+      sqliteTxDepth++;
+      conn.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         const result = await fn(...args);
         conn.exec('COMMIT');
         return result;
       } catch (e) {
-        conn.exec('ROLLBACK');
+        try { conn.exec('ROLLBACK'); } catch { /* 已自动回滚时忽略 */ }
         throw e;
+      } finally {
+        sqliteTxDepth--;
+        release();
       }
     };
   }

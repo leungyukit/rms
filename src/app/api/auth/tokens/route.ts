@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     );
     for (const pid of project_ids) {
       if (pid && Number(pid) > 0) {
-        insertAccess.run(targetUserId, Number(pid), 'member');
+        await insertAccess.run(targetUserId, Number(pid), 'member');
       }
     }
   }

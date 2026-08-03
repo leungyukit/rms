@@ -122,14 +122,14 @@ export async function POST(req: NextRequest) {
   if (nodes && Array.isArray(nodes)) {
     const nStmt = db.prepare('INSERT INTO workflow_nodes (workflow_id, node_key, label, type, assignee_id, auto_status, pos_x, pos_y, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     for (const n of nodes) {
-      nStmt.run(wfId, n.node_key || n.key, n.label, n.type || 'task', n.assignee_id || null, n.auto_status || null, n.pos_x || 0, n.pos_y || 0, JSON.stringify(n.config || {}));
+      await nStmt.run(wfId, n.node_key || n.key, n.label, n.type || 'task', n.assignee_id || null, n.auto_status || null, n.pos_x || 0, n.pos_y || 0, JSON.stringify(n.config || {}));
     }
   }
 
   if (edges && Array.isArray(edges)) {
     const eStmt = db.prepare('INSERT INTO workflow_edges (workflow_id, from_node, to_node, condition_type, condition_value, label) VALUES (?, ?, ?, ?, ?, ?)');
     for (const e of edges) {
-      eStmt.run(wfId, e.from_node || e.from, e.to_node || e.to, e.condition_type || 'always', e.condition_value || '', e.label || '');
+      await eStmt.run(wfId, e.from_node || e.from, e.to_node || e.to, e.condition_type || 'always', e.condition_value || '', e.label || '');
     }
   }
 
@@ -169,7 +169,7 @@ export async function PUT(req: NextRequest) {
     (await db.prepare('DELETE FROM workflow_nodes WHERE workflow_id = ?').run(id));
     const nStmt = db.prepare('INSERT INTO workflow_nodes (workflow_id, node_key, label, type, assignee_id, auto_status, pos_x, pos_y, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     for (const n of nodes) {
-      nStmt.run(id, n.node_key || n.key, n.label, n.type || 'task', n.assignee_id || null, n.auto_status || null, n.pos_x || 0, n.pos_y || 0, JSON.stringify(n.config || {}));
+      await nStmt.run(id, n.node_key || n.key, n.label, n.type || 'task', n.assignee_id || null, n.auto_status || null, n.pos_x || 0, n.pos_y || 0, JSON.stringify(n.config || {}));
     }
   }
 
@@ -177,7 +177,7 @@ export async function PUT(req: NextRequest) {
     (await db.prepare('DELETE FROM workflow_edges WHERE workflow_id = ?').run(id));
     const eStmt = db.prepare('INSERT INTO workflow_edges (workflow_id, from_node, to_node, condition_type, condition_value, label) VALUES (?, ?, ?, ?, ?, ?)');
     for (const e of edges) {
-      eStmt.run(id, e.from_node || e.from, e.to_node || e.to, e.condition_type || 'always', e.condition_value || '', e.label || '');
+      await eStmt.run(id, e.from_node || e.from, e.to_node || e.to, e.condition_type || 'always', e.condition_value || '', e.label || '');
     }
   }
 

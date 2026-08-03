@@ -9,8 +9,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const resolvedParams = await params;
   const filePath = resolvedParams.path.join('/');
 
-  // Security: prevent directory traversal
-  if (filePath.includes('..') || filePath.includes('\0')) {
+  // 安全修复（2026-08-03）：原校验只查 '..' 字面量，无法抵御编码变体；
+  // 现改为 resolve 后强制校验最终路径仍在 uploads/ 内。
+  if (filePath.includes('\0')) {
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
 
@@ -19,11 +20,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return NextResponse.json({ error: 'Access denied' }, { status: 403 });
   }
 
-  const fullPath = path.join(BASE_DIR, filePath);
+  const fullPath = path.resolve(BASE_DIR, filePath);
+  const uploadsRoot = path.resolve(BASE_DIR, 'uploads');
+  if (!fullPath.startsWith(uploadsRoot + path.sep)) {
+    return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
+  }
 
   // Check if file exists
   if (!fs.existsSync(fullPath)) {
     return NextResponse.json({ error: 'File not found' }, { status: 404 });
+  }
+
+  // 拒绝符号链逃逸
+  if (fs.lstatSync(fullPath).isSymbolicLink()) {
+    return NextResponse.json({ error: 'Invalid path' }, { status: 400 });
   }
 
   // Check if it's a file (not directory)
@@ -44,7 +54,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     '.gif': 'image/gif',
     '.bmp': 'image/bmp',
     '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
+    // 安全修复（2026-08-03）：SVG 可嵌 <script> → 存储型 XSS。此端点无鉴权，风险更高。
+    '.svg': 'application/octet-stream',
     '.pdf': 'application/pdf',
     '.doc': 'application/msword',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -69,6 +80,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       'Content-Type': contentType,
       'Content-Length': stat.size.toString(),
       'Cache-Control': 'public, max-age=31536000',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
     },
   });
 }
