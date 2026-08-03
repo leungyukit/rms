@@ -48,4 +48,10 @@ export JWT_SECRET
 export PORT=3800
 export HOSTNAME=0.0.0.0
 export NODE_ENV=production
+
+# Cookie Secure（2026-08-03）
+# 本机是内网 HTTP 部署（http://10.128.16.58:3800）—— 若开着 secure，
+# 浏览器会直接丢弃 rms_token cookie，表现为“登录无反应”（接口实际返回 200）。
+# 以后上 HTTPS 时把这行改回 true 或删掉。
+export COOKIE_SECURE=false
 exec node server.js
