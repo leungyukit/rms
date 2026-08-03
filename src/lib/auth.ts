@@ -4,27 +4,47 @@ import crypto from 'crypto';
 import { cookies, headers } from 'next/headers';
 import { getDb, isMysqlEnabled } from './db';
 
-const JWT_SECRET = (() => {
+// JWT 密钥（2026-08-03 修复，同日二次修正为懒加载）
+//
+// 原代码回退到硬编码默认串 'rms-secret-key-change-in-production'，而部署链路
+// （start.sh / k8s.yaml / docker-compose.yml / entrypoint.sh）从未设过 JWT_SECRET
+// —— 等于全网公开的密钥，任何人可离线签发 admin token。
+//
+// 第一版改成模块加载期直接 throw，结果 `next build` 收集 page data 时会加载路由模块，
+// 导致构建机也必须持有生产密钥，构建直接失败。现改为：
+//   1) 懒加载 —— 只在真正签发/校验 token 时才要求密钥；
+//   2) 构建阶段（NEXT_PHASE=phase-production-build）不校验；
+//   3) 生产运行时缺失/过短 → 抛错（请求 500），而不是静默用弱密钥。
+let _jwtSecret: string | null = null;
+
+function isBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build';
+}
+
+function getJwtSecret(): string {
+  if (_jwtSecret) return _jwtSecret;
   const s = process.env.JWT_SECRET;
-  // 安全修复（2026-08-03）：原代码回退到硬编码默认串
-  // 'rms-secret-key-change-in-production'，而部署链路（start.sh / k8s.yaml /
-  // docker-compose.yml / entrypoint.sh）从未设过 JWT_SECRET —— 等于全网公开的密钥，
-  // 任何人可离线签发 admin token。现改为：生产必须显式配置，缺失则拒绝启动。
-  if (!s || s.length < 32) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'JWT_SECRET 未设置或长度不足 32 位。生产环境必须配置强随机密钥，' +
-        '例如：export JWT_SECRET="$(openssl rand -hex 32)"'
-      );
-    }
-    // 非生产：每次启动随机生成，避免固定默认密钥被利用（代价：重启后需重新登录）
-    const dev = crypto.randomBytes(32).toString('hex');
+
+  if (s && s.length >= 32) {
+    _jwtSecret = s;
+    return _jwtSecret;
+  }
+
+  if (process.env.NODE_ENV === 'production' && !isBuildPhase()) {
+    throw new Error(
+      'JWT_SECRET 未设置或长度不足 32 位。生产环境必须配置强随机密钥，' +
+      '例如：export JWT_SECRET="$(openssl rand -hex 32)"'
+    );
+  }
+
+  // 非生产 / 构建阶段：临时随机密钥，绝不回退到固定默认串
+  _jwtSecret = crypto.randomBytes(32).toString('hex');
+  if (!isBuildPhase()) {
     // eslint-disable-next-line no-console
     console.warn('[auth] JWT_SECRET 未设置，已为本次进程生成临时密钥（重启后所有 token 失效）。');
-    return dev;
   }
-  return s;
-})();
+  return _jwtSecret;
+}
 const TOKEN_NAME = 'rms_token';
 const EXPIRES_IN = '7d';
 
@@ -106,12 +126,12 @@ export function verifyPassword(password: string, hash: string): boolean {
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: EXPIRES_IN });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: EXPIRES_IN });
 }
 
 export function verifyToken(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    return jwt.verify(token, getJwtSecret()) as JwtPayload;
   } catch {
     return null;
   }

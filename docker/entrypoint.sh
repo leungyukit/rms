@@ -19,6 +19,28 @@ OPENCLAW_ENABLED="${OPENCLAW_ENABLED:-true}"
 FEISHU_APP_ID="${FEISHU_APP_ID:-}"
 FEISHU_APP_SECRET="${FEISHU_APP_SECRET:-}"
 
+# JWT 签名密钥（2026-08-03 新增）
+# 应用层已加强校验：NODE_ENV=production 且 JWT_SECRET 未设/<32 位 → 拒绝启动。
+# 这里不给弱默认值，只在缺失时按容器持久卷生成一次并落盘复用，
+# 避免重启后所有登录态失效（之前根本没设过 → 等于用公开的硬编码默认密钥签 token）。
+JWT_SECRET_FILE="/var/lib/mysql/.rms_jwt_secret"
+if [ -z "${JWT_SECRET}" ]; then
+  if [ -f "$JWT_SECRET_FILE" ]; then
+    JWT_SECRET="$(cat "$JWT_SECRET_FILE")"
+    echo "[init] JWT_SECRET loaded from persistent volume"
+  else
+    JWT_SECRET="$(openssl rand -hex 32)"
+    ( umask 077; printf '%s' "$JWT_SECRET" > "$JWT_SECRET_FILE" )
+    echo "[init] JWT_SECRET generated and persisted to $JWT_SECRET_FILE"
+    echo "[init] 生产环境建议改为通过 env / k8s secret 显式注入"
+  fi
+fi
+export JWT_SECRET
+if [ "${#JWT_SECRET}" -lt 32 ]; then
+  echo "[FATAL] JWT_SECRET 长度不足 32 位，RMS 将拒绝启动。请重新注入强随机密钥：openssl rand -hex 32" >&2
+  exit 1
+fi
+
 # Flag file to track first-run
 FIRST_RUN_FLAG="/var/lib/mysql/.initialized"
 
@@ -129,7 +151,9 @@ MYSQL_PORT=3306
 MYSQL_DATABASE=${MYSQL_DATABASE}
 MYSQL_USER=${MYSQL_USER}
 MYSQL_PASSWORD=${MYSQL_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
 EOF
+chmod 600 .env.local
 
 # Start RMS with pm2
 pm2 start "npm run start" --name rms --cwd /app/rms || pm2 restart rms

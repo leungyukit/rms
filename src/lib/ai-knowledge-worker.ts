@@ -6,6 +6,8 @@ import { claimNextJob, completeJob, failJob, getConfig } from './ai-knowledge-mi
 import { getDb } from './db';
 
 let started = false;
+let workerHandle: ReturnType<typeof setInterval> | null = null;
+const POLL_INTERVAL_MS = Number(process.env.AI_KNOWLEDGE_POLL_INTERVAL_MS || 5000);
 
 interface Job { id: number; requirement_id: number; trigger_status: string; }
 
@@ -90,7 +92,9 @@ async function processOne(job: Job) {
 export function startAiKnowledgeWorker() {
   if (started) return;
   started = true;
-  setInterval(async () => {
+  // 2026-08-03: 原来 setInterval 不留句柄 —— 无法停止、热重载会叠加多个定时器
+  // （dev/HMR 下每次模块重载都新起一个，重复抢占同一批 job）。现保存句柄并支持停止。
+  workerHandle = setInterval(async () => {
     if (getConfig('ai_knowledge_auto_enabled', 'true') !== 'true') return;
     try {
       // 并发 2
@@ -104,7 +108,23 @@ export function startAiKnowledgeWorker() {
       // eslint-disable-next-line no-console
       console.warn('[ai-knowledge-worker]', (e as any).message);
     }
-  }, 5000);
+  }, POLL_INTERVAL_MS);
+  // Node 下不要因为这个定时器阻止进程退出
+  (workerHandle as any)?.unref?.();
   // eslint-disable-next-line no-console
-  console.log('[ai-knowledge] worker started (5s interval, 2 concurrent)');
+  console.log(`[ai-knowledge] worker started (${POLL_INTERVAL_MS}ms interval, 2 concurrent)`);
+}
+
+/** 停止 worker（幂等；用于优雅退出或 admin 关停） */
+export function stopAiKnowledgeWorker(): void {
+  if (workerHandle) {
+    clearInterval(workerHandle);
+    workerHandle = null;
+  }
+  started = false;
+}
+
+/** 状态查询 */
+export function getAiKnowledgeWorkerStatus(): { running: boolean; pollIntervalMs: number } {
+  return { running: workerHandle !== null, pollIntervalMs: POLL_INTERVAL_MS };
 }
