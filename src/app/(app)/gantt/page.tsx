@@ -35,6 +35,28 @@ function fmt(d: Date) { return `${d.getMonth() + 1}/${d.getDate()}`; }
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function daysBetween(a: Date, b: Date) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
 
+// ── 视图配置 ──
+type ViewKey = 'day' | 'week' | 'month';
+const VIEW_CFG: Record<ViewKey, { pxPerDay: number; primaryLabel: (d: Date) => string; secondaryLabel: (d: Date) => string | null; alignStart: (d: Date) => Date; showWeekend: boolean }> = {
+  // 按天：每天 28px，主刻度=月份，次刻度=日
+  day:   { pxPerDay: 28, primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, secondaryLabel: d => String(d.getDate()),     alignStart: d => { const r = new Date(d); const day = r.getDay() || 7; r.setDate(r.getDate() - (day - 1)); r.setHours(0,0,0,0); return r; }, showWeekend: true },
+  // 按周：每天 12px（每周 84px），主刻度=月份，次刻度=周
+  week:  { pxPerDay: 12, primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, secondaryLabel: d => { const w = getWeekOfYear(d); return w === 1 && d.getMonth() > 0 ? null : `W${w}`; }, alignStart: d => { const r = new Date(d); const day = r.getDay() || 7; r.setDate(r.getDate() - (day - 1)); r.setHours(0,0,0,0); return r; }, showWeekend: true },
+  // 按月：每天 5px（每月约 150px），主刻度=年份，次刻度=月份
+  month: { pxPerDay: 5,  primaryLabel: d => `${d.getFullYear()}`,                                              secondaryLabel: d => `${d.getMonth() + 1}月`,  alignStart: d => { const r = new Date(d.getFullYear(), d.getMonth(), 1); return r; }, showWeekend: false },
+};
+function getWeekOfYear(d: Date): number {
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+}
+
 export default async function GanttPage(props: any) {
   const params = (await props.searchParams) || {};
   const currentView = params.view === 'week' ? 'week' : params.view === 'month' ? 'month' : 'day';
@@ -86,18 +108,45 @@ export default async function GanttPage(props: any) {
     );
   }
 
-  // ── 时间窗口 ──
+  // ── 时间窗口（按视图对齐到合适的边界） ──
+  const cfg = VIEW_CFG[currentView];
   const starts = items.map(i => parseDate(i.planned_start)).filter(Boolean) as Date[];
   const ends   = items.map(i => parseDate(i.planned_end)).filter(Boolean) as Date[];
-  const tlStart = addDays(new Date(Math.min(...starts.map(d => d.getTime()))), -3);
-  const tlEnd   = addDays(new Date(Math.max(...ends.map(d => d.getTime()))), 3);
+  const rawStart = starts.length ? new Date(Math.min(...starts.map(d => d.getTime()))) : new Date();
+  const rawEnd   = ends.length ? new Date(Math.max(...ends.map(d => d.getTime()))) : new Date();
+  // tlStart 在 alignStart（周初/月初）之前再推 3 天，留 padding
+  const tlStart = addDays(cfg.alignStart(rawStart), -3);
+  // tlEnd 在 alignStart 之后再推 3/31 天
+  const tlEnd   = addDays(cfg.alignStart(rawEnd),   currentView === 'month' ? 31 : 3);
+  // 对齐到日
+  tlStart.setHours(0,0,0,0); tlEnd.setHours(0,0,0,0);
   const totalDays = daysBetween(tlStart, tlEnd) + 1;
 
-  // ── 刻度间隔 ──
-  const tickEvery = currentView === 'month' ? 30 : currentView === 'week' ? 7 : 2;
-  const ticks: { label: string; offset: number }[] = [];
-  for (let i = 0; i <= totalDays; i += tickEvery) {
-    ticks.push({ label: fmt(addDays(tlStart, i)), offset: i });
+  // ── 刻度生成：主刻度（按月/按年）+ 次刻度（按日/按周/按月） ──
+  // 主刻度：每个月份/年份开始一天
+  const primaryTicks: { label: string; offset: number }[] = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = addDays(tlStart, i);
+    const prev = i === 0 ? null : addDays(tlStart, i - 1);
+    const isBoundary = currentView === 'month'
+      ? d.getMonth() === 0 && (prev == null || prev.getFullYear() !== d.getFullYear())
+      : d.getDate() === 1;
+    if (isBoundary) {
+      primaryTicks.push({ label: cfg.primaryLabel(d), offset: i });
+    }
+  }
+  // 次刻度：日=每天、周=每周一、月=每月1号
+  const secondaryTicks: { label: string; offset: number; dim?: boolean }[] = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = addDays(tlStart, i);
+    let show = false; let dim = false;
+    if (currentView === 'day') { show = true; }
+    else if (currentView === 'week') { show = d.getDay() === 1; }
+    else if (currentView === 'month') { show = d.getDate() === 1; dim = d.getMonth() % 3 !== 0; }
+    if (show) {
+      const lbl = cfg.secondaryLabel(d);
+      if (lbl != null) secondaryTicks.push({ label: lbl, offset: i, dim });
+    }
   }
 
   const today = new Date();
@@ -135,13 +184,30 @@ export default async function GanttPage(props: any) {
 
       {/* 甘特图主体 */}
       <div className="card overflow-x-auto">
-        <div className="gantt" style={{ minWidth: totalDays * (currentView === 'month' ? 18 : currentView === 'week' ? 36 : 28) + 160 }}>
-          {/* 刻度尺 */}
-          <div className="gantt-ruler">
+        <div className="gantt" style={{ minWidth: totalDays * cfg.pxPerDay + 200 }}>
+          {/* 主刻度（年/月） */}
+          <div className="gantt-ruler gantt-ruler--primary">
             <div className="gantt-ruler-label" />
             <div className="gantt-ruler-ticks">
-              {ticks.map((t, i) => (
-                <span key={i} className="gantt-tick" style={{ left: `${(t.offset / totalDays) * 100}%` }}>
+              {primaryTicks.map((t, i) => {
+                const next = primaryTicks[i + 1];
+                const span = next ? (next.offset - t.offset) : (totalDays - t.offset);
+                return (
+                  <span key={`p${i}`} className="gantt-primary"
+                        style={{ left: `${(t.offset / totalDays) * 100}%`, width: `${(span / totalDays) * 100}%` }}>
+                    {t.label}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          {/* 次刻度（日/周/月） */}
+          <div className="gantt-ruler gantt-ruler--secondary">
+            <div className="gantt-ruler-label" />
+            <div className="gantt-ruler-ticks">
+              {secondaryTicks.map((t, i) => (
+                <span key={`s${i}`} className={`gantt-tick${t.dim ? ' gantt-tick--dim' : ''}`}
+                      style={{ left: `${(t.offset / totalDays) * 100}%` }}>
                   <span className="gantt-tick-line" />
                   <span className="gantt-tick-text">{t.label}</span>
                 </span>
@@ -163,8 +229,8 @@ export default async function GanttPage(props: any) {
                   <span className="gantt-status-dot" style={{ background: sc.text }} />
                 </div>
                 <div className="gantt-track">
-                  {/* 周分隔 */}
-                  {Array.from({ length: totalDays }).map((_, i) => {
+                  {/* 周分隔 / 周末（仅日/周视图） */}
+                  {cfg.showWeekend && Array.from({ length: totalDays }).map((_, i) => {
                     const d = addDays(tlStart, i);
                     const dow = d.getDay();
                     const isWeekend = dow === 0 || dow === 6;
@@ -172,6 +238,15 @@ export default async function GanttPage(props: any) {
                     if (!isWeekStart && !isWeekend) return null;
                     return (
                       <span key={i} className={`gantt-weekline ${isWeekend ? 'gantt-weekend' : ''}`}
+                            style={{ left: `${(i / totalDays) * 100}%` }} />
+                    );
+                  })}
+                  {/* 网格线（月视图：每月1号竖线） */}
+                  {!cfg.showWeekend && Array.from({ length: totalDays }).map((_, i) => {
+                    const d = addDays(tlStart, i);
+                    if (d.getDate() !== 1) return null;
+                    return (
+                      <span key={`m${i}`} className="gantt-weekline"
                             style={{ left: `${(i / totalDays) * 100}%` }} />
                     );
                   })}
