@@ -70,10 +70,10 @@ const ANALYSIS_ITEMS = [
   { href: '/sla-dashboard', icon: '🚨', label: 'nav.sla' },
   { href: '/workload', icon: '👥', label: 'nav.workload' },
   { href: '/calendar', icon: '📆', label: 'nav.calendar' },
-  { href: '/custom-reports', icon: '📊', label: '自定义报表' },
-  { href: '/custom-dashboards', icon: '🎛️', label: '自定义仪表盘' },
-  { href: '/data-sources', icon: '📊', label: '数据源管理' },
-  { href: '/db-explorer', icon: '🗄️', label: '数据库浏览器' },
+  { href: '/custom-reports', icon: '📊', label: 'nav.customReports' },
+  { href: '/custom-dashboards', icon: '🎛️', label: 'nav.customDashboards' },
+  { href: '/data-sources', icon: '📊', label: 'nav.dataSources' },
+  { href: '/db-explorer', icon: '🗄️', label: 'nav.dbExplorer' },
 ];
 
 const KNOWLEDGE_ITEMS = [

@@ -75,7 +75,11 @@
     "reports": "周报中心",
     "sprints": "Sprint 列表",
     "tags": "标签管理",
-    "workflows": "工作流"
+    "workflows": "工作流",
+    "customReports": "自定义报表",
+    "customDashboards": "自定义仪表盘",
+    "dataSources": "数据源管理",
+    "dbExplorer": "数据库浏览器"
   },
   "auth": {
     "login": "登录",

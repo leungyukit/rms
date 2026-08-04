@@ -75,7 +75,11 @@
     "reports": "Reports",
     "sprints": "Sprints",
     "tags": "Tags",
-    "workflows": "Workflows"
+    "workflows": "Workflows",
+    "customReports": "Custom Reports",
+    "customDashboards": "Custom Dashboards",
+    "dataSources": "Data Sources",
+    "dbExplorer": "DB Explorer"
   },
   "auth": {
     "login": "Login",
