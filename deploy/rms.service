@@ -1,0 +1,39 @@
+[Unit]
+Description=RMS - Requirement Management System (Next.js)
+Documentation=https://github.com/leungyukit/rms
+After=network.target mysql.service memcached.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=itd3
+Group=itd3
+WorkingDirectory=/home/itd3/www/rms
+
+EnvironmentFile=/home/itd3/www/rms/.env.systemd
+ExecStartPre=/usr/bin/test -f /home/itd3/www/rms/.next/standalone/www/rms/server.js
+ExecStart=/bin/bash /home/itd3/www/rms/start.sh
+ExecStop=/bin/kill -TERM $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=20
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# 日志走 journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rms
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/itd3/www/rms/.next/standalone /home/itd3/www/rms/public/uploads /home/itd3/www/rms/data /home/itd3/www/rms/logs
+
+[Install]
+WantedBy=multi-user.target
