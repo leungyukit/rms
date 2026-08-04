@@ -114,7 +114,9 @@ export default async function GanttPage(props: any) {
   const ends   = items.map(i => parseDate(i.planned_end)).filter(Boolean) as Date[];
   const rawStart = starts.length ? new Date(Math.min(...starts.map(d => d.getTime()))) : new Date();
   const rawEnd   = ends.length ? new Date(Math.max(...ends.map(d => d.getTime()))) : new Date();
-  const tlStart = addDays(cfg.alignStart(rawStart), currentView === 'month' ? 0 : 3);
+  // tlStart 在 alignStart（周初/月初）之前再推 3 天，留 padding
+  const tlStart = addDays(cfg.alignStart(rawStart), -3);
+  // tlEnd 在 alignStart 之后再推 3/31 天
   const tlEnd   = addDays(cfg.alignStart(rawEnd),   currentView === 'month' ? 31 : 3);
   // 对齐到日
   tlStart.setHours(0,0,0,0); tlEnd.setHours(0,0,0,0);
