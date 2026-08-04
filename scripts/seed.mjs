@@ -88,6 +88,10 @@ const menuItems = [
   { href: '/sla-dashboard', icon: '🚨', label_key: 'nav.sla', section: 'analysis', sort_order: 2 },
   { href: '/workload', icon: '👥', label_key: 'nav.workload', section: 'analysis', sort_order: 3 },
   { href: '/calendar', icon: '📆', label_key: 'nav.calendar', section: 'analysis', sort_order: 4 },
+  { href: '/custom-reports', icon: '📊', label_key: 'nav.customReports', section: 'analysis', sort_order: 5 },
+  { href: '/custom-dashboards', icon: '🎛️', label_key: 'nav.customDashboards', section: 'analysis', sort_order: 6 },
+  { href: '/data-sources', icon: '📊', label_key: 'nav.dataSources', section: 'analysis', sort_order: 7 },
+  { href: '/db-explorer', icon: '🗄️', label_key: 'nav.dbExplorer', section: 'analysis', sort_order: 8 },
   { href: '/knowledge', icon: '📚', label_key: 'nav.knowledge', section: 'knowledge', sort_order: 1 },
   { href: '/knowledge/graph', icon: '🕸️', label_key: 'knowledge.graph', section: 'knowledge', sort_order: 2 },
   { href: '/knowledge/insights', icon: '💡', label_key: 'knowledge.insights', section: 'knowledge', sort_order: 3 },
@@ -116,6 +120,7 @@ const businessHrefs = [
   '/chat', '/requirements', '/requirements/new', '/kanban', '/gantt', '/checklist/my', '/workflows', '/workflows/monitor',
   '/sprints', '/timesheet', '/projects',
   '/dashboard', '/sla-dashboard', '/workload', '/calendar',
+  '/custom-reports', '/custom-dashboards', '/data-sources', '/db-explorer',
   '/knowledge', '/knowledge/graph', '/knowledge/insights',
 ];
 for (const href of businessHrefs) {
