@@ -100,6 +100,11 @@ function mysqlExec(sql: string): string {
         '-h', MYSQL_HOST,
         '-P', String(MYSQL_PORT),
         '-u', MYSQL_USER,
+        // 必须显式指定字符集：mysql CLI 默认可能是 latin1（Docker 部署实测确认
+        // character_set_client/connection/results 全为 latin1），中文经 latin1 通道
+        // 写入 utf8mb4 列会双重编码，表现为「创建用户」→「åˆ›å»ºç”¨æˆ·」。
+        // 2026-08-12 线上事故根因，勿删。
+        '--default-character-set=utf8mb4',
         MYSQL_DATABASE,
         '-N', '-B',
       ],
