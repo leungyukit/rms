@@ -37,3 +37,13 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# ---- 部署产物与敏感数据（2026-08-12）----
+# 生产数据全量转储：含 bcrypt 密码哈希、access_tokens 的 SHA256 全值、审计日志等
+# 本仓库是 public，绝不能进版本库
+deploy/docker/rms-data.sql
+# OpenClaw 运行时家目录：含内部群 ID、人员 ID、私有记忆
+deploy/docker/openclaw-home/
+# CSS 改造过程备份
+src/app/globals.css.bak*
+*.bak.*

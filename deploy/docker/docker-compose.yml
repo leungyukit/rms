@@ -1,0 +1,156 @@
+# RMS 生产部署 — 三容器分离（RMS / MySQL / memcached）
+# 目标机：<YOUR_SERVER_IP> (Ubuntu 24.04, 2C3.5G)
+#
+# 用法：
+#   cd /opt/rms && cp .env.example .env && vi .env   # 填密码与 JWT_SECRET
+#   docker compose up -d
+#   访问 http://<YOUR_SERVER_IP>:3800
+
+name: rms
+
+services:
+  mysql:
+    image: docker.1ms.run/mysql:8.0
+    container_name: rms-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 2026-08-12 乱码事故第三道防线：
+      # 服务端实测 character_set_client/connection/results 全为 latin1，
+      # 客户端不显式指定字符集时中文会双重编码写坏。加这个参数后服务端
+      # 直接忽略客户端声明的字符集，一律按 utf8mb4 处理。
+      - --skip-character-set-client-handshake
+      - --default-authentication-plugin=mysql_native_password
+      # 2C3.5G 小机器：把 InnoDB 缓冲池压到 256M，别把内存吃光
+      - --innodb-buffer-pool-size=256M
+      - --max-connections=100
+      - --skip-name-resolve
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?必填}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rms}
+      MYSQL_USER: ${MYSQL_USER:-rms}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?必填}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动导入（仅当 mysql-data 为空时执行）
+      - ./rms-data.sql:/docker-entrypoint-initdb.d/10-rms-data.sql:ro
+    # 不对外暴露 3306，只在内网 network 里可达（要外连调试再手工加 ports）
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [rms-net]
+
+  memcached:
+    image: docker.1ms.run/memcached:1.6-alpine
+    container_name: rms-memcached
+    restart: unless-stopped
+    command: ["-m", "128"]
+    expose:
+      - "11211"
+    networks: [rms-net]
+
+  rms:
+    image: rms-prod:latest
+    container_name: rms-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      memcached:
+        condition: service_started
+    environment:
+      DB_TYPE: mysql
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rms}
+      MYSQL_USER: ${MYSQL_USER:-rms}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?必填}
+      MEMCACHE_HOST: memcached
+      MEMCACHE_PORT: 11211
+      # 应用层强校验：生产模式下未设或 <32 位直接拒绝启动
+      JWT_SECRET: ${JWT_SECRET:?必填，用 openssl rand -hex 32 生成}
+      # HTTP 裸端口部署必须 false，否则浏览器丢弃 cookie → "登录无反应"
+      # 以后上 HTTPS 记得改 true
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      NODE_ENV: production
+      PORT: 3800
+      HOSTNAME: 0.0.0.0
+      TZ: Asia/Shanghai
+    ports:
+      - "${RMS_PORT:-3800}:3800"
+    volumes:
+      - rms-uploads:/app/public/uploads
+      - rms-data:/app/data
+    networks: [rms-net]
+
+  nginx:
+    image: docker.1ms.run/nginx:1.27-alpine
+    container_name: rms-nginx
+    restart: unless-stopped
+    depends_on:
+      rms:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx-rms.conf:/etc/nginx/conf.d/default.conf:ro
+      # $connection_upgrade 必须在 http 上下文定义，conf.d 会被 http 块 include
+      - ./nginx-upgrade-map.conf:/etc/nginx/conf.d/00-upgrade-map.conf:ro
+      - nginx-logs:/var/log/nginx
+    environment:
+      TZ: Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/login"]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 20s
+    networks: [rms-net]
+
+  openclaw:
+    image: rms-openclaw:latest
+    container_name: rms-openclaw
+    restart: unless-stopped
+    depends_on:
+      rms:
+        condition: service_started
+    environment:
+      # entrypoint 强校验：未注入或是占位符/弱值直接拒绝启动
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?required}
+      OPENCLAW_PORT: 18789
+      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-}
+      # 飞书：留空则渠道保持关闭
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      # 容器内访问 RMS 走服务名，不绕公网
+      RMS_BASE_URL: http://rms:3800
+      TZ: Asia/Shanghai
+    ports:
+      # 只绑回环！OpenClaw gateway 可执行任意命令，暴露到公网等于送出 root shell。
+      # 需要远程访问就走 SSH 隧道：
+      #   ssh -L 18789:127.0.0.1:18789 ubuntu@<YOUR_SERVER_IP>
+      - "127.0.0.1:${OPENCLAW_PORT:-18789}:18789"
+    volumes:
+      # 会话/记忆持久化，容器重建不丢
+      - openclaw-agents:/root/.openclaw/agents
+      - openclaw-workspace:/root/.openclaw/workspace
+    networks: [rms-net]
+
+networks:
+  rms-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  rms-uploads:
+  rms-data:
+  openclaw-agents:
+  openclaw-workspace:
+  nginx-logs:

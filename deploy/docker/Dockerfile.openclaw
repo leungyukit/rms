@@ -1,0 +1,45 @@
+# OpenClaw Gateway 容器（远端构建版）
+#
+# 与仓库根目录 Dockerfile.openclaw 的差别（那份有几个坑）：
+#  1. 那份 COPY .openclaw/ —— 仓库里没这个目录，实际叫 docker/openclaw-home，必炸
+#  2. 那份把版本钉死 2026.6.1；这里用构建参数，默认取当前 latest
+#  3. 那份 gateway token 是 CHANGE... 占位符，等于没鉴权 —— 改由 entrypoint 强校验
+#  4. 不再 CMD 里写 --bind 0.0.0.0 --allow-unconfigured：
+#     容器内监听 0.0.0.0 是必要的（否则宿主访问不到），
+#     但宿主侧端口只绑 127.0.0.1，不裸奔到公网（见 compose）
+
+FROM docker.1ms.run/node:24-slim
+
+ARG OPENCLAW_VERSION=2026.7.1-2
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+ENV NODE_ENV=production \
+    HOME=/root \
+    OPENCLAW_HOME=/root/.openclaw
+
+WORKDIR /root/.openclaw
+
+# git/curl：OpenClaw 的 skill 与部分工具要用；ca-certificates 走 HTTPS
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates git tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm config set registry "$NPM_REGISTRY" \
+    && npm install -g "openclaw@${OPENCLAW_VERSION}" \
+    && npm cache clean --force
+
+# 配置与 workspace（openclaw.json 由 entrypoint 就地改写 token）
+COPY --chown=root:root openclaw-home/ ./
+
+# 清掉不该进镜像的缓存/日志/备份
+RUN rm -rf ./npm/* ./logs/* ./cache/* 2>/dev/null || true; \
+    rm -f ./*.bak ./*.bak.* ./*.last-good ./*.pre-* ./*-handoff.json ./openclaw.json_* 2>/dev/null || true
+
+COPY --chown=root:root openclaw-entrypoint.sh /usr/local/bin/openclaw-entrypoint.sh
+RUN chmod +x /usr/local/bin/openclaw-entrypoint.sh
+
+EXPOSE 18789
+
+HEALTHCHECK --interval=30s --timeout=8s --retries=4 --start-period=40s \
+    CMD curl -fsS http://127.0.0.1:18789/ >/dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/openclaw-entrypoint.sh"]
