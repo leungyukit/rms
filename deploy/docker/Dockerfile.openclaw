@@ -13,9 +13,15 @@ FROM docker.1ms.run/node:24-slim
 ARG OPENCLAW_VERSION=2026.7.1-2
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 
+# 2026-08-13 重大坑：绝对不要设 OPENCLAW_HOME=/root/.openclaw
+# OPENCLAW_HOME 是「家目录」语义，OpenClaw 会在它下面再拼一层 .openclaw/，
+# 于是配置路径变成 /root/.openclaw/.openclaw/openclaw.json —— 文件不存在，
+# 整个 openclaw.json 静默失效（bind/model/chatCompletions 全部走默认值），
+# 还会凭空建出 /root/.openclaw/.openclaw/{identity,state} 套娃目录。
+# 更阴的是 entrypoint 命令行传了 --token，鉴权照样能过，于是故障被藏住。
+# HOME=/root 就够了，OpenClaw 自己会算出 /root/.openclaw。
 ENV NODE_ENV=production \
-    HOME=/root \
-    OPENCLAW_HOME=/root/.openclaw
+    HOME=/root
 
 WORKDIR /root/.openclaw
 

@@ -51,6 +51,13 @@ conf.gateway.port = parseInt(process.env.OPENCLAW_PORT || '18789', 10);
 // 对外暴露范围由 compose 的 ports 绑定 127.0.0.1 控制。
 conf.gateway.bind = 'lan';
 
+// OpenAI 兼容端点默认关闭（返回 404），RMS 走 /v1/chat/completions 调用，必须显式开启。
+// 2026-08-13：生产实测未开时 POST /v1/chat/completions → 404，而 GET /v1/models 被
+// Control UI 的 catch-all 接走返回 200 text/html，导致 RMS 健康检查假绿灯。
+conf.gateway.http = conf.gateway.http || {};
+conf.gateway.http.endpoints = conf.gateway.http.endpoints || {};
+conf.gateway.http.endpoints.chatCompletions = { enabled: true };
+
 const primary = (process.env.OPENCLAW_MODEL || '').trim();
 if (primary) {
   conf.agents = conf.agents || {};
