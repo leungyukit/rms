@@ -77,7 +77,12 @@ async function callOpenClaw(gateway: { url: string; token: string }, userMessage
     headers['Authorization'] = `Bearer ${gateway.token}`;
   }
   if (sessionKey) {
-    headers['x-openclaw-session-key'] = sessionKey;
+    // Must be namespaced with the target agent id, otherwise the Gateway
+    // resolves the session to the default agent and the model field is ignored.
+    const agentId = process.env.OPENCLAW_AGENT_ID || 'rms';
+    headers['x-openclaw-session-key'] = sessionKey.startsWith(`agent:${agentId}:`)
+      ? sessionKey
+      : `agent:${agentId}:${sessionKey}`;
   }
 
   const systemPrompt = `你是 RMS（需求管理系统）的 AI 助手，不是通用 AI。你的唯一职责是帮助用户操作 RMS 系统：查询需求、分析数据、创建/修改需求、搜索知识库、生成报告。
@@ -105,7 +110,7 @@ ${dbSchema || ''}
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model: 'openclaw',
+      model: process.env.OPENCLAW_AGENT_MODEL || 'openclaw/rms',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
