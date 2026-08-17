@@ -234,14 +234,15 @@ export default async function GanttPage(props: any) {
     if (!nearest?.min_s) return null;
     const target = parseDate(nearest.min_s);
     if (!target) return null;
+    // 必须用 floor：round 会把目标日期甩到窗口起点之前，点了跳转还是空窗口
     if (currentView === 'month') {
       const base = startOfMonth(today);
       const diff = (target.getFullYear() - base.getFullYear()) * 12 + (target.getMonth() - base.getMonth());
-      return Math.round((diff + 2) / 12);
+      return Math.floor((diff + 2) / 12);
     }
     const span = currentView === 'day' ? 28 : 84;
     const lead = currentView === 'day' ? 7 : 14;
-    return Math.round((daysBetween(startOfWeek(today), target) + lead) / span);
+    return Math.floor((daysBetween(startOfWeek(today), target) + lead) / span);
   })();
 
   return (
