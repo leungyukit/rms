@@ -1,0 +1,18 @@
+[client]
+# MySQL 只读凭据模板。
+#
+# 部署时：
+#   cp .rms-my.cnf.example "$HOME/.openclaw/workspace-rms/.rms-my.cnf"
+#   vi   "$HOME/.openclaw/workspace-rms/.rms-my.cnf"     # 填真实值
+#   chmod 600 "$HOME/.openclaw/workspace-rms/.rms-my.cnf"
+#
+# 真实文件绝不入库（本仓库是 public）。
+# 建议单独建只读账号，不要复用应用账号：
+#   CREATE USER 'rms_ro'@'localhost' IDENTIFIED BY '<强密码>';
+#   GRANT SELECT ON rms.* TO 'rms_ro'@'localhost';
+#   FLUSH PRIVILEGES;
+host=localhost
+port=3306
+user=<只读账号，例如 rms_ro>
+password=<该账号密码>
+database=rms

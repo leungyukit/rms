@@ -44,6 +44,10 @@ Thumbs.db
 deploy/docker/rms-data.sql
 # OpenClaw 运行时家目录：含内部群 ID、人员 ID、私有记忆
 deploy/docker/openclaw-home/
+# OpenClaw 集成配置目录：只允许提交模板与结构，真实凭据一律拦住
+deploy/openclaw/**/.rms-my.cnf
+deploy/openclaw/**/*.local.json
+deploy/openclaw/**/openclaw.json
 # CSS 改造过程备份
 src/app/globals.css.bak*
 *.bak.*

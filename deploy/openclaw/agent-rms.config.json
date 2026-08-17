@@ -1,0 +1,35 @@
+{
+  "_comment": "把这个对象追加进 openclaw.json 的 agents.list 数组。只新增，不要覆盖已有键。__HOME__ 替换为部署用户的家目录绝对路径（OpenClaw 不展开 $HOME）。",
+  "id": "rms",
+  "name": "RMS 助手",
+  "workspace": "__HOME__/.openclaw/workspace-rms",
+  "agentDir": "__HOME__/.openclaw/agents/rms/agent",
+  "identity": {
+    "name": "RMS 助手"
+  },
+  "tools": {
+    "allow": [
+      "read",
+      "exec",
+      "session_status"
+    ],
+    "deny": [
+      "write",
+      "edit",
+      "apply_patch",
+      "browser",
+      "canvas",
+      "nodes",
+      "cron",
+      "sessions_send",
+      "sessions_spawn",
+      "sessions_list",
+      "sessions_history",
+      "web_search",
+      "web_fetch",
+      "skill_workshop",
+      "memory_search",
+      "memory_get"
+    ]
+  }
+}
