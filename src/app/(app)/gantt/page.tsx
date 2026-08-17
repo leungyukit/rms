@@ -26,25 +26,22 @@ const STATUS_LABELS: Record<string, string> = {
 
 const PRIORITY_COLORS: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#10B981' };
 
-function parseDate(s: string | null): Date | null {
+// ── 日期工具 ──
+function parseDate(s: any): Date | null {
   if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  const d = s instanceof Date ? new Date(s.getTime()) : new Date(String(s));
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
-function fmt(d: Date) { return `${d.getMonth() + 1}/${d.getDate()}`; }
-function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); r.setHours(0,0,0,0); return r; }
+function addMonths(d: Date, n: number) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
 function daysBetween(a: Date, b: Date) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
+function startOfWeek(d: Date) { const r = new Date(d); const dow = r.getDay() || 7; r.setDate(r.getDate() - (dow - 1)); r.setHours(0,0,0,0); return r; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function ymd(d: Date) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function fmtCn(d: Date) { return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; }
 
-// ── 视图配置 ──
-type ViewKey = 'day' | 'week' | 'month';
-const VIEW_CFG: Record<ViewKey, { pxPerDay: number; primaryLabel: (d: Date) => string; secondaryLabel: (d: Date) => string | null; alignStart: (d: Date) => Date; showWeekend: boolean }> = {
-  // 按天：每天 28px，主刻度=月份，次刻度=日
-  day:   { pxPerDay: 28, primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, secondaryLabel: d => String(d.getDate()),     alignStart: d => { const r = new Date(d); const day = r.getDay() || 7; r.setDate(r.getDate() - (day - 1)); r.setHours(0,0,0,0); return r; }, showWeekend: true },
-  // 按周：每天 12px（每周 84px），主刻度=月份，次刻度=周
-  week:  { pxPerDay: 12, primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, secondaryLabel: d => { const w = getWeekOfYear(d); return w === 1 && d.getMonth() > 0 ? null : `W${w}`; }, alignStart: d => { const r = new Date(d); const day = r.getDay() || 7; r.setDate(r.getDate() - (day - 1)); r.setHours(0,0,0,0); return r; }, showWeekend: true },
-  // 按月：每天 5px（每月约 150px），主刻度=年份，次刻度=月份
-  month: { pxPerDay: 5,  primaryLabel: d => `${d.getFullYear()}`,                                              secondaryLabel: d => `${d.getMonth() + 1}月`,  alignStart: d => { const r = new Date(d.getFullYear(), d.getMonth(), 1); return r; }, showWeekend: false },
-};
 function getWeekOfYear(d: Date): number {
   const target = new Date(d.valueOf());
   const dayNr = (d.getDay() + 6) % 7;
@@ -57,91 +54,149 @@ function getWeekOfYear(d: Date): number {
   return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
 }
 
+// ── 视图配置 ──
+type ViewKey = 'day' | 'week' | 'month';
+const VIEW_CFG: Record<ViewKey, {
+  pxPerDay: number;
+  label: string;
+  unitName: string;
+  primaryLabel: (d: Date) => string;
+  secondaryLabel: (d: Date) => string | null;
+  showWeekend: boolean;
+}> = {
+  // 按天：每天 28px，主刻度=月份，次刻度=日
+  day: {
+    pxPerDay: 28, label: '按天', unitName: '4 周',
+    primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+    secondaryLabel: d => String(d.getDate()),
+    showWeekend: true,
+  },
+  // 按周：每天 12px（每周 84px），主刻度=月份，次刻度=周
+  week: {
+    pxPerDay: 12, label: '按周', unitName: '12 周',
+    primaryLabel: d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+    secondaryLabel: d => { const w = getWeekOfYear(d); return w === 1 && d.getMonth() > 0 ? null : `W${w}`; },
+    showWeekend: true,
+  },
+  // 按月：每天 5px（每月约 150px），主刻度=年份，次刻度=月份
+  month: {
+    pxPerDay: 5, label: '按月', unitName: '12 个月',
+    primaryLabel: d => `${d.getFullYear()}`,
+    secondaryLabel: d => `${d.getMonth() + 1}月`,
+    showWeekend: false,
+  },
+};
+
+/**
+ * 时间窗口：**以当前时间为锚点**，不再跟着任务日期跑。
+ *  - day   offset=0 → 含今天的 4 周（今天位于第 2 周，前后都有余量）
+ *  - week  offset=0 → 含本周的 12 周（本周位于第 3 周）
+ *  - month offset=0 → 含当前月的 12 个月（当前月位于第 3 个月）
+ * offset 为翻页步进：-1 = 上一页，+1 = 下一页，0 = 回到今天。
+ */
+function windowFor(view: ViewKey, offset: number, today: Date): { start: Date; end: Date } {
+  if (view === 'month') {
+    const base = startOfMonth(today);
+    const start = addMonths(base, offset * 12 - 2);
+    const end = addDays(addMonths(start, 12), -1);
+    return { start, end };
+  }
+  const span = view === 'day' ? 28 : 84;   // 天数
+  const lead = view === 'day' ? 7 : 14;    // 今天之前预留
+  const base = startOfWeek(today);
+  const start = addDays(base, offset * span - lead);
+  return { start, end: addDays(start, span - 1) };
+}
+
 export default async function GanttPage(props: any) {
-  const params = (await props.searchParams) || {};
-  const currentView = params.view === 'week' ? 'week' : params.view === 'month' ? 'month' : 'day';
+  const sp = (await props.searchParams) || {};
+  const currentView: ViewKey = sp.view === 'week' ? 'week' : sp.view === 'month' ? 'month' : 'day';
+  const rawOffset = Number.parseInt(String(sp.offset ?? '0'), 10);
+  const offset = Number.isFinite(rawOffset) ? Math.max(-120, Math.min(120, rawOffset)) : 0;
+
+  const cfg = VIEW_CFG[currentView];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // 窗口只由「今天 + 视图 + 翻页」决定，与任务数据无关
+  const { start: tlStart, end: tlEnd } = windowFor(currentView, offset, today);
+  const totalDays = daysBetween(tlStart, tlEnd) + 1;
 
   let items: any[] = [];
-  let userProjectIds: number[] = [];
   let isAdmin = false;
+  let noPermission = false;
+  let nearest: { min_s: string | null; max_e: string | null } | null = null;
+  let queryFailed = false;
+
   try {
     const user = await getCurrentUser();
+    let userProjectIds: number[] = [];
     if (user) {
       isAdmin = isGlobalAdmin(user.roles);
-      if (!isAdmin) {
-        userProjectIds = getUserRoleProjects(user.id);
-      }
+      if (!isAdmin) userProjectIds = getUserRoleProjects(user.id);
     }
+
     const db = getAsyncDb();
-    const where: string[] = ['planned_start IS NOT NULL', 'planned_end IS NOT NULL'];
-    const params: any[] = [];
+    const where: string[] = [
+      'planned_start IS NOT NULL',
+      'planned_end IS NOT NULL',
+      'merged_into IS NULL',            // 排除已合并需求
+      'planned_start <= ?',             // 与窗口有交集即可
+      'planned_end >= ?',
+    ];
+    const args: any[] = [ymd(tlEnd), ymd(tlStart)];
+
     if (!isAdmin) {
       if (userProjectIds.length > 0) {
         where.push(`project_id IN (${userProjectIds.map(() => '?').join(',')})`);
-        params.push(...userProjectIds);
+        args.push(...userProjectIds);
       } else {
         where.push('1=0');
+        noPermission = true;
       }
     }
+
     const sql = `SELECT id, title, status, planned_start, planned_end, priority
                  FROM requirements
                  WHERE ${where.join(' AND ')}
-                 ORDER BY planned_start
-                 LIMIT 30`;
-    items = (await db.prepare(sql).all(...params)) as any[];
-  } catch (e) { console.error('Gantt query error:', e); }
+                 ORDER BY planned_start, planned_end
+                 LIMIT 200`;
+    items = (await db.prepare(sql).all(...args)) as any[];
 
-  if (items.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div className="page-header">
-          <h1 className="page-title">📅 甘特图</h1>
-          <p className="page-subtitle">需求排期可视化</p>
-        </div>
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-icon">📅</div>
-            <div className="empty-state-text">暂无排期数据（需求需要有计划开始/结束日期）</div>
-          </div>
-        </div>
-      </div>
-    );
+    // 窗口内没数据时，找出最近的排期区间，给用户一个跳转提示
+    if (items.length === 0 && !noPermission) {
+      const nWhere = ['planned_start IS NOT NULL', 'planned_end IS NOT NULL', 'merged_into IS NULL'];
+      const nArgs: any[] = [];
+      if (!isAdmin && userProjectIds.length > 0) {
+        nWhere.push(`project_id IN (${userProjectIds.map(() => '?').join(',')})`);
+        nArgs.push(...userProjectIds);
+      }
+      nearest = (await db
+        .prepare(`SELECT MIN(planned_start) AS min_s, MAX(planned_end) AS max_e FROM requirements WHERE ${nWhere.join(' AND ')}`)
+        .get(...nArgs)) as any;
+    }
+  } catch (e) {
+    queryFailed = true;
+    console.error('Gantt query error:', e);
   }
 
-  // ── 时间窗口（按视图对齐到合适的边界） ──
-  const cfg = VIEW_CFG[currentView];
-  const starts = items.map(i => parseDate(i.planned_start)).filter(Boolean) as Date[];
-  const ends   = items.map(i => parseDate(i.planned_end)).filter(Boolean) as Date[];
-  const rawStart = starts.length ? new Date(Math.min(...starts.map(d => d.getTime()))) : new Date();
-  const rawEnd   = ends.length ? new Date(Math.max(...ends.map(d => d.getTime()))) : new Date();
-  // tlStart 在 alignStart（周初/月初）之前再推 3 天，留 padding
-  const tlStart = addDays(cfg.alignStart(rawStart), -3);
-  // tlEnd 在 alignStart 之后再推 3/31 天
-  const tlEnd   = addDays(cfg.alignStart(rawEnd),   currentView === 'month' ? 31 : 3);
-  // 对齐到日
-  tlStart.setHours(0,0,0,0); tlEnd.setHours(0,0,0,0);
-  const totalDays = daysBetween(tlStart, tlEnd) + 1;
-
-  // ── 刻度生成：主刻度（按月/按年）+ 次刻度（按日/按周/按月） ──
-  // 主刻度：每个月份/年份开始一天
+  // ── 刻度 ──
   const primaryTicks: { label: string; offset: number }[] = [];
   for (let i = 0; i < totalDays; i++) {
     const d = addDays(tlStart, i);
     const prev = i === 0 ? null : addDays(tlStart, i - 1);
     const isBoundary = currentView === 'month'
-      ? d.getMonth() === 0 && (prev == null || prev.getFullYear() !== d.getFullYear())
-      : d.getDate() === 1;
-    if (isBoundary) {
-      primaryTicks.push({ label: cfg.primaryLabel(d), offset: i });
-    }
+      ? (i === 0 || (d.getMonth() === 0 && prev != null && prev.getFullYear() !== d.getFullYear()))
+      : (i === 0 || d.getDate() === 1);
+    if (isBoundary) primaryTicks.push({ label: cfg.primaryLabel(d), offset: i });
   }
-  // 次刻度：日=每天、周=每周一、月=每月1号
+
   const secondaryTicks: { label: string; offset: number; dim?: boolean }[] = [];
   for (let i = 0; i < totalDays; i++) {
     const d = addDays(tlStart, i);
     let show = false; let dim = false;
-    if (currentView === 'day') { show = true; }
-    else if (currentView === 'week') { show = d.getDay() === 1; }
+    if (currentView === 'day') show = true;
+    else if (currentView === 'week') show = d.getDay() === 1;
     else if (currentView === 'month') { show = d.getDate() === 1; dim = d.getMonth() % 3 !== 0; }
     if (show) {
       const lbl = cfg.secondaryLabel(d);
@@ -149,36 +204,81 @@ export default async function GanttPage(props: any) {
     }
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
   const todayOffset = daysBetween(tlStart, today);
+  const todayInWindow = todayOffset >= 0 && todayOffset < totalDays;
 
+  // 条形：裁剪到窗口内，越界侧加箭头标记
   const bar = (item: any) => {
     const s = parseDate(item.planned_start), e = parseDate(item.planned_end);
-    if (!s || !e) return {};
-    const left = daysBetween(tlStart, s);
-    const width = daysBetween(s, e) + 1;
-    return { left: `${(left / totalDays) * 100}%`, width: `${(width / totalDays) * 100}%` };
+    if (!s || !e) return null;
+    const rawL = daysBetween(tlStart, s);
+    const rawR = daysBetween(tlStart, e);
+    if (rawR < 0 || rawL > totalDays - 1) return null;         // 完全在窗口外
+    const l = Math.max(0, rawL);
+    const r = Math.min(totalDays - 1, rawR);
+    return {
+      style: { left: `${(l / totalDays) * 100}%`, width: `${((r - l + 1) / totalDays) * 100}%` },
+      cutLeft: rawL < 0,
+      cutRight: rawR > totalDays - 1,
+    };
   };
+
+  const hrefFor = (v: ViewKey, o: number) => `?view=${v}${o !== 0 ? `&offset=${o}` : ''}`;
+
+  // 窗口区间文案
+  const rangeText = currentView === 'month'
+    ? `${tlStart.getFullYear()}年${tlStart.getMonth() + 1}月 ~ ${tlEnd.getFullYear()}年${tlEnd.getMonth() + 1}月`
+    : `${fmtCn(tlStart)} ~ ${fmtCn(tlEnd)}`;
+
+  const jumpOffset = (() => {
+    if (!nearest?.min_s) return null;
+    const target = parseDate(nearest.min_s);
+    if (!target) return null;
+    if (currentView === 'month') {
+      const base = startOfMonth(today);
+      const diff = (target.getFullYear() - base.getFullYear()) * 12 + (target.getMonth() - base.getMonth());
+      return Math.round((diff + 2) / 12);
+    }
+    const span = currentView === 'day' ? 28 : 84;
+    const lead = currentView === 'day' ? 7 : 14;
+    return Math.round((daysBetween(startOfWeek(today), target) + lead) / span);
+  })();
 
   return (
     <div className="space-y-4">
-      {/* 头部 + 视图切换 */}
+      {/* 头部 + 视图切换（无论有无数据都渲染，避免切换按钮消失） */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">📅 甘特图</h1>
-          <p className="page-subtitle">需求排期可视化 · {items.length} 个需求{!isAdmin ? ' · 仅显示你有权限的项目' : ''}</p>
+          <p className="page-subtitle">
+            {rangeText}
+            {todayInWindow ? ' · 含今天' : ''}
+            {items.length > 0 ? ` · ${items.length} 个需求` : ''}
+            {!isAdmin ? ' · 仅显示你有权限的项目' : ''}
+          </p>
         </div>
-        <div className="flex items-center gap-0.5 bg-white rounded-lg p-0.5">
-          {(['day', 'week', 'month'] as const).map(view => {
-            const active = currentView === view;
-            return (
-              <a key={view} href={`?view=${view}`}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                {view === 'day' ? '按天' : view === 'week' ? '按周' : '按月'}
-              </a>
-            );
-          })}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 翻页 */}
+          <div className="flex items-center gap-0.5 bg-white rounded-lg p-0.5">
+            <a href={hrefFor(currentView, offset - 1)} title={`上一${cfg.unitName}`}
+               className="px-2.5 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors">←</a>
+            <a href={hrefFor(currentView, 0)}
+               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${offset === 0 ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}>今天</a>
+            <a href={hrefFor(currentView, offset + 1)} title={`下一${cfg.unitName}`}
+               className="px-2.5 py-1.5 text-xs font-medium rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors">→</a>
+          </div>
+          {/* 视图切换：切换时重置回今天 */}
+          <div className="flex items-center gap-0.5 bg-white rounded-lg p-0.5">
+            {(['day', 'week', 'month'] as const).map(view => {
+              const active = currentView === view;
+              return (
+                <a key={view} href={hrefFor(view, 0)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+                  {VIEW_CFG[view].label}
+                </a>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -217,10 +317,12 @@ export default async function GanttPage(props: any) {
 
           {/* 行 */}
           {items.map(item => {
-            const s = bar(item);
+            const b = bar(item);
+            if (!b) return null;
             const sc = STATUS_COLORS[item.status] || { bg: '#F3F4F6', text: '#6B7280' };
+            const pEnd = parseDate(item.planned_end);
             const isOverdue = !['completed', 'verified', 'closed'].includes(item.status)
-                              && parseDate(item.planned_end)! < today;
+                              && pEnd != null && pEnd < today;
             const pc = PRIORITY_COLORS[item.priority] || '#9CA3AF';
             return (
               <div key={item.id} className={`gantt-row ${isOverdue ? 'gantt-row--overdue' : ''}`}>
@@ -238,7 +340,7 @@ export default async function GanttPage(props: any) {
                     if (!isWeekStart && !isWeekend) return null;
                     return (
                       <span key={i} className={`gantt-weekline ${isWeekend ? 'gantt-weekend' : ''}`}
-                            style={{ left: `${(i / totalDays) * 100}%` }} />
+                            style={{ left: `${(i / totalDays) * 100}%`, ...(isWeekend ? { width: `${(1 / totalDays) * 100}%` } : {}) }} />
                     );
                   })}
                   {/* 网格线（月视图：每月1号竖线） */}
@@ -251,21 +353,62 @@ export default async function GanttPage(props: any) {
                     );
                   })}
                   {/* 今日线 */}
-                  {todayOffset >= 0 && todayOffset <= totalDays && (
+                  {todayInWindow && (
                     <span className="gantt-today" style={{ left: `${(todayOffset / totalDays) * 100}%` }} />
                   )}
                   {/* 进度条 */}
                   <div className="gantt-bar"
-                       style={{ left: s.left, width: s.width, background: sc.bg, borderLeft: `3px solid ${sc.text}` }}
-                       title={`#${item.id} ${item.title}\n${item.planned_start} ~ ${item.planned_end}\n${STATUS_LABELS[item.status]}`}>
+                       style={{ ...b.style, background: sc.bg, borderLeft: b.cutLeft ? 'none' : `3px solid ${sc.text}` }}
+                       title={`#${item.id} ${item.title}\n${ymd(parseDate(item.planned_start)!)} ~ ${ymd(pEnd!)}\n${STATUS_LABELS[item.status] || item.status}`}>
+                    {b.cutLeft && <span className="gantt-bar-text" style={{ flex: '0 0 auto', opacity: 0.6 }}>‹</span>}
                     <span className="gantt-bar-text">{item.title}</span>
+                    {b.cutRight && <span className="gantt-bar-text" style={{ flex: '0 0 auto', opacity: 0.6 }}>›</span>}
                     <span className="gantt-bar-priority" style={{ background: pc }} />
                   </div>
                 </div>
               </div>
             );
           })}
+
+          {/* 空窗口：保留刻度，只在下方提示 */}
+          {items.length === 0 && (
+            <div className="gantt-row">
+              <div className="gantt-label"><span className="gantt-title" style={{ opacity: 0.5 }}>—</span></div>
+              <div className="gantt-track">
+                {todayInWindow && (
+                  <span className="gantt-today" style={{ left: `${(todayOffset / totalDays) * 100}%` }} />
+                )}
+              </div>
+            </div>
+          )}
         </div>
+
+        {items.length === 0 && (
+          <div className="empty-state" style={{ paddingTop: '1.5rem' }}>
+            <div className="empty-state-icon">📅</div>
+            <div className="empty-state-text">
+              {queryFailed
+                ? '查询失败，请稍后重试或联系管理员'
+                : noPermission
+                  ? '你还没有任何项目权限，无法查看排期'
+                  : `当前时间范围（${rangeText}）内没有排期需求`}
+            </div>
+            {!queryFailed && !noPermission && nearest?.min_s && jumpOffset != null && (
+              <div className="text-xs text-gray-500 mt-2">
+                已有排期集中在 {ymd(parseDate(nearest.min_s)!)} ~ {ymd(parseDate(nearest.max_e)!)}
+                {jumpOffset !== offset && (
+                  <>
+                    {' · '}
+                    <a href={hrefFor(currentView, jumpOffset)} className="text-blue-600 hover:underline">跳到那段时间</a>
+                  </>
+                )}
+              </div>
+            )}
+            {!queryFailed && !noPermission && !nearest?.min_s && (
+              <div className="text-xs text-gray-500 mt-2">系统里还没有任何带计划开始/结束日期的需求</div>
+            )}
+          </div>
+        )}
 
         {/* 图例 */}
         <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 text-xs text-gray-500">
