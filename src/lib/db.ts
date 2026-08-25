@@ -22,8 +22,15 @@ const MYSQL_HOST = process.env.MYSQL_HOST || 'localhost';
 const MYSQL_PORT = process.env.MYSQL_PORT || '3306';
 const MYSQL_DATABASE = process.env.MYSQL_DATABASE || 'rms';
 const MYSQL_USER = process.env.MYSQL_USER || 'rms';
-const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || 'rms123456';
+// 不给密码默认值：本仓库公开，可用凭据绝不能进代码。
+// 启用 MySQL 但没提供密码时直接报错，不静默回退到一个猜出来的弱密码。
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
 const USE_MYSQL = process.env.DB_TYPE === 'mysql';
+if (USE_MYSQL && !MYSQL_PASSWORD) {
+  throw new Error(
+    'DB_TYPE=mysql 但未设置 MYSQL_PASSWORD。请在环境变量（或 .env.systemd）中配置后重启。'
+  );
+}
 
 const DB_PATH = path.join(process.cwd(), 'data', 'rms.db');
 let sqliteDb: Database.Database | null = null;

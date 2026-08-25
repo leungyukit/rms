@@ -16,7 +16,7 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 // ====== 认证模式 ======
 const USE_HTTP = !!process.env.RMS_BASE_URL;
@@ -55,18 +55,60 @@ const MYSQL_HOST = process.env.MYSQL_HOST || 'localhost';
 const MYSQL_PORT = process.env.MYSQL_PORT || '3306';
 const MYSQL_DATABASE = process.env.MYSQL_DATABASE || 'rms';
 const MYSQL_USER = process.env.MYSQL_USER || 'rms';
-const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || 'rms123456';
+// 密码不设默认值：绝不把可用凭据写进代码（本仓库公开）。
+// 直连模式下缺失则启动即退出，不静默连一个猜出来的密码。
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
+if (!USE_HTTP && !MYSQL_PASSWORD) {
+  console.error(
+    '[RMS MCP] 致命错误：直连数据库模式缺少 MYSQL_PASSWORD。\n' +
+    '  请设置环境变量后重启，例如：\n' +
+    '    export MYSQL_PASSWORD="<db password>"\n' +
+    '  或改用 HTTP API 模式（设置 RMS_BASE_URL + RMS_ACCESS_TOKEN）。'
+  );
+  process.exit(1);
+}
 
 // 所有工具共用的 _token 参数描述
 const TOKEN_PARAM_DESC = '用户 Access Token（用于标识操作用户，实现审计追踪）';
 
 // ====== HTTP API 调用（HTTP 模式） ======
 // ====== MySQL 工具函数 ======
+/**
+ * 安全修复（2026-08-25）：原实现把 SQL 拼进 `sh -c "mysql ... -e \"<SQL>\""`，
+ * 只转义了 `\` 和 `"`，漏掉 `$` 和反引号，导致 `$(...)` 命令替换可在服务器上
+ * 执行任意命令（RCE）。escapeValue() 只防 SQL 注入，防不住 shell 层注入 ——
+ * 任何流进 title/description 等字段的字符串都能打穿。已实测复现。
+ *
+ * 主库 src/lib/db.ts 早在 2026-08-03 修过同一个洞，本文件当时被漏掉。
+ *
+ * 现改为与 db.ts 一致的三层隔离：
+ *   1. execFileSync 直接调二进制，不经 shell → 无命令替换/管道/重定向；
+ *   2. SQL 走 stdin，不作为命令行参数 → SQL 内容与命令行彻底隔离；
+ *   3. 密码走 MYSQL_PWD 环境变量 → 不出现在 `ps` 可见的命令行里。
+ * 勿改回字符串拼接。
+ */
 function mysqlExec(sql) {
   try {
-    const escaped = sql.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    const cmd = `mysql -h ${MYSQL_HOST} -P ${MYSQL_PORT} -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} -N -B -e "${escaped}" 2>/dev/null`;
-    return execSync(cmd, { encoding: 'utf8', timeout: 15000 }).trim();
+    return execFileSync(
+      'mysql',
+      [
+        '-h', MYSQL_HOST,
+        '-P', String(MYSQL_PORT),
+        '-u', MYSQL_USER,
+        // 必须显式指定字符集：mysql CLI 默认可能是 latin1，中文经 latin1 通道
+        // 写入 utf8mb4 列会双重编码（2026-08-12 线上事故根因，勿删）。
+        '--default-character-set=utf8mb4',
+        '-N', '-B',
+        MYSQL_DATABASE,
+      ],
+      {
+        input: sql,
+        encoding: 'utf8',
+        timeout: 15000,
+        env: { ...process.env, MYSQL_PWD: MYSQL_PASSWORD },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    ).trim();
   } catch {
     return '';
   }
@@ -149,8 +191,11 @@ function query(sql, params = []) {
         if (current) columns.push(current);
 
         columns = columns.map(c => {
-          const asMatch = c.trim().match(/AS\s+([a-zA-Z_][a-zA-Z0-9_]*)$/i);
-          if (asMatch) return asMatch[1];
+          // 别名可能带引号（`key` / 'key' / "key"）—— MySQL 保留字必须加引号。
+          // 旧正则只认裸标识符，导致 `COLUMN_KEY as 'key'` 落到下面的剥非法字符分支，
+          // 被揉成 `COLUMN_KEYaskey`（get_schema 实测返回过这个鬼字段名）。
+          const aliased = c.trim().match(/\bAS\s+(?:`([^`]+)`|'([^']+)'|"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*$/i);
+          if (aliased) return aliased[1] || aliased[2] || aliased[3] || aliased[4];
           const parts = c.trim().split('.');
           return parts[parts.length - 1].trim().replace(/[^a-zA-Z0-9_]/g, '');
         });
