@@ -142,12 +142,25 @@ ${dbSchema || ''}
 
 // Load RMS DB schema for context
 function getRmsDbSchema() {
-  try {
-    const schemaPath = '/home/itd3/.openclaw/workspace/rms-db-schema.md';
-    if (fs.existsSync(schemaPath)) {
-      return fs.readFileSync(schemaPath, 'utf-8').substring(0, 3000) + '\n\n... (更多字段详见 /home/itd3/.openclaw/workspace/rms-db-schema.md)';
-    }
-  } catch {}
+  // 之前硬编码 /home/itd3/.openclaw/workspace/rms-db-schema.md —— 那是开发机路径，
+  // 容器里不存在，schema 永远为空且静默。现在按优先序找，并允许环境变量覆盖。
+  const candidates = [
+    process.env.RMS_DB_SCHEMA_PATH,
+    '/app/data/rms-db-schema.md',
+    path.join(process.cwd(), 'rms-db-schema.md'),
+    path.join(process.cwd(), 'docs/rms-db-schema.md'),
+  ].filter((p): p is string => !!p);
+
+  for (const schemaPath of candidates) {
+    try {
+      if (fs.existsSync(schemaPath)) {
+        return (
+          fs.readFileSync(schemaPath, 'utf-8').substring(0, 3000) +
+          `\n\n... (更多字段详见 ${schemaPath})`
+        );
+      }
+    } catch { /* 试下一个候选路径 */ }
+  }
   return '';
 }
 

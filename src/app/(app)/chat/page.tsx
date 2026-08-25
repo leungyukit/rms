@@ -29,6 +29,23 @@ function unwrapSingleCodeBlock(content: string): string {
   return match ? match[1].trim() : trimmed;
 }
 
+type ChatMode = 'basic' | 'ai' | 'agent';
+const CHAT_MODE_KEY = 'rms.chat.mode';
+
+/**
+ * 读取上次使用的对话模式。
+ * 之前 chatMode 是纯内存 state，刷新/重进页面就弹回 basic，
+ * 用户以为自己在 Agent 模式，实际收到的是基础模式的关键词兜底文案。
+ */
+function loadChatMode(): ChatMode {
+  if (typeof window === 'undefined') return 'basic';
+  try {
+    const v = window.localStorage.getItem(CHAT_MODE_KEY);
+    if (v === 'basic' || v === 'ai' || v === 'agent') return v;
+  } catch { /* localStorage 被禁用时静默降级 */ }
+  return 'basic';
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -37,7 +54,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chatMode, setChatMode] = useState<'basic' | 'ai' | 'agent'>('basic');
+  // SSR 与首帧保持 'basic'，挂载后再从 localStorage 恢复，避免 hydration 不一致
+  const [chatMode, setChatMode] = useState<ChatMode>('basic');
   const [openclawReady, setOpenclawReady] = useState(false);
   const [openclawEnabling, setOpenclawEnabling] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -69,6 +87,12 @@ export default function ChatPage() {
   };
 
   useEffect(() => { loadConversations(); }, []);
+
+  // 挂载后恢复上次的对话模式（避免刷新后静默弹回 basic）
+  useEffect(() => {
+    const saved = loadChatMode();
+    if (saved !== 'basic') setChatMode(saved);
+  }, []);
 
   useEffect(() => {
     if (activeId) loadMessages(activeId);
@@ -215,8 +239,11 @@ export default function ChatPage() {
     } catch { return false; } finally { setOpenclawEnabling(false); }
   };
 
-  const switchMode = (mode: 'basic' | 'ai' | 'agent') => {
+  const switchMode = (mode: ChatMode) => {
     setChatMode(mode);
+    try {
+      window.localStorage.setItem(CHAT_MODE_KEY, mode);
+    } catch { /* ignore */ }
     // 不清空当前对话和消息，切换模式后仍保留上下文
     if (mode === 'agent') {
       setOpenclawReady(false);
