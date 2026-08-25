@@ -19,7 +19,18 @@ const { z } = require('zod');
 const { execFileSync } = require('child_process');
 
 // ====== 认证模式 ======
-const USE_HTTP = !!process.env.RMS_BASE_URL;
+// RMS_MCP_MODE 显式指定模式，优先级最高：
+//   'db'   → 直连 MySQL（需 MYSQL_PASSWORD）
+//   'http' → 走 HTTP API（需 RMS_ACCESS_TOKEN）
+// 未指定时保持历史行为：给了 RMS_BASE_URL 就走 HTTP。
+// 加这个开关的原因：容器里 RMS_BASE_URL 是给 rms-api.js 的 HTTP fallback 用的，
+// 但 HTTP 模式必须有用户 Access Token，而 Agent 侧拿不到 —— 只靠 RMS_BASE_URL
+// 推断会把 MCP 锁死在必然失败的 HTTP 模式上。
+const MCP_MODE = (process.env.RMS_MCP_MODE || '').trim().toLowerCase();
+const USE_HTTP =
+  MCP_MODE === 'http' ? true :
+  MCP_MODE === 'db'   ? false :
+  !!process.env.RMS_BASE_URL;
 const HTTP_BASE_URL = process.env.RMS_BASE_URL || 'http://localhost:3800';
 // 支持多个 Token（逗号分隔），第一个为默认 Token
 const HTTP_TOKENS = (process.env.RMS_ACCESS_TOKENS || process.env.RMS_ACCESS_TOKEN || '').split(',').map(t => t.trim()).filter(Boolean);

@@ -8,7 +8,7 @@
  * 环境变量:
  *   RMS_BASE_URL      - RMS HTTP 服务器地址，默认 http://localhost:3800
  *   RMS_ACCESS_TOKEN   - Access Token（HTTP 模式必填）
- *   RMS_MCP_PATH       - MCP 服务器脚本路径，默认 /home/itd3/www/rms/rms-mcp-server.js
+ *   RMS_MCP_PATH       - MCP 服务器脚本路径，默认 /root/rms-mcp-server.js
  *   RMS_MCP_HOST       - MCP SSE 服务器地址（可选，启用远程 MCP）
  *   RMS_MCP_PORT       - MCP SSE 服务器端口（可选，默认 3900）
  */
@@ -18,7 +18,7 @@ const path = require('path');
 
 const BASE_URL = process.env.RMS_BASE_URL || 'http://localhost:3800';
 const TOKEN = process.env.RMS_ACCESS_TOKEN || '';
-const MCP_PATH = process.env.RMS_MCP_PATH || '/home/itd3/www/rms/rms-mcp-server.js';
+const MCP_PATH = process.env.RMS_MCP_PATH || '/root/rms-mcp-server.js';
 const MCP_HOST = process.env.RMS_MCP_HOST || '';
 const MCP_PORT = parseInt(process.env.RMS_MCP_PORT || '3900');
 
@@ -291,7 +291,7 @@ function usage() {
 环境变量:
   RMS_BASE_URL      - RMS HTTP 地址，默认 http://localhost:3800
   RMS_ACCESS_TOKEN   - Access Token（HTTP 模式必填）
-  RMS_MCP_PATH       - MCP 脚本路径，默认 /home/itd3/www/rms/rms-mcp-server.js
+  RMS_MCP_PATH       - MCP 脚本路径，默认 /root/rms-mcp-server.js
 
 示例:
   node rms-api.js search '{"keyword":"登录","status":"in_progress"}'
