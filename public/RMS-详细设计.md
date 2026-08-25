@@ -681,7 +681,7 @@ npm run build
 pm2 restart rms
 
 # 4. 如需回滚数据库
-mysql -h localhost -u rms -prms123456 rms < /var/backups/rms/rms_YYYYMMDD_HHMMSS.sql
+MYSQL_PWD="$MYSQL_PASSWORD" mysql -h localhost -u rms rms < /var/backups/rms/rms_YYYYMMDD_HHMMSS.sql
 ```
 
 ---

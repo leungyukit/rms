@@ -56,7 +56,7 @@ tail -f /tmp/rms-mcp.log
           "MYSQL_PORT": "3306",
           "MYSQL_DATABASE": "rms",
           "MYSQL_USER": "rms",
-          "MYSQL_PASSWORD": "rms123456"
+          "MYSQL_PASSWORD": "<从环境变量注入，勿写死>"
         }
       }
     }
@@ -116,4 +116,4 @@ tail -f /tmp/rms-mcp.log
 | `MYSQL_PORT` | 3306 | MySQL 端口 |
 | `MYSQL_DATABASE` | rms | 数据库名 |
 | `MYSQL_USER` | rms | 数据库用户 |
-| `MYSQL_PASSWORD` | rms123456 | 数据库密码 |
+| `MYSQL_PASSWORD` | （必填，无默认值） | 数据库密码，须由环境变量注入 |

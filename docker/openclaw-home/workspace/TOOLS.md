@@ -46,8 +46,8 @@ Add whatever helps you do your job. This is your cheat sheet.
 ### RMS Database
 
 - **Type**: **MySQL**(生产/测试都走 MySQL,不用 SQLite)
-- **MySQL 连接**:`mysql://rms@127.0.0.1:3306/rms` (密码从 `/home/itd3/www/rms/.env.local` 读,长度 3 位,不是 `rms123456`;读法:`PW=$(grep ^MYSQL_PASSWORD= /home/itd3/www/rms/.env.local | cut -d= -f2-)`)
-- **Query tool**:`node ~/.openclaw/plugin-skills/db-query/scripts/query.js "mysql://rms:rms123456@127.0.0.1:3306/rms" "<sql>"`
+- **MySQL 连接**：`mysql://rms@127.0.0.1:3306/rms`（密码由环境变量 `MYSQL_PASSWORD` 注入，勿写进文档或命令行）
+- **Query tool**：`node ~/.openclaw/plugin-skills/db-query/scripts/query.js "mysql://rms:$MYSQL_PASSWORD@127.0.0.1:3306/rms" "<sql>"`
 - **SQLite fallback**:`/home/itd3/www/rms/data/rms.db`(⚠️ **不要再用**,写 SQL 时要兼容 MySQL;写完用 MySQL 测过才算数)
 - **MySQL 专有函数**:CURDATE()、DATE_SUB(... INTERVAL n ...)、DATE_FORMAT()、NOW()、INTERVAL -- 这些 SQLite 没有
 - **MySQL 保留字(列名/表名必须加反引号 `\`留字\``)**:

@@ -44,7 +44,7 @@ docker run -d \
   -p 18789:18789 \
   -p 3306:3306 \
   -p 11211:11211 \
-  -e MYSQL_PASSWORD=rms123456 \
+  -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
   -e FEISHU_APP_ID=your_app_id \
   -e FEISHU_APP_SECRET=your_app_secret \
   -v rms-mysql:/var/lib/mysql \
@@ -62,7 +62,7 @@ docker logs -f rms-openclaw
 ```bash
 # 1. 创建 secrets（替换为你的实际值）
 kubectl create secret generic rms-secrets \
-  --from-literal=mysql-password=rms123456 \
+  --from-literal=mysql-password="$MYSQL_PASSWORD" \
   --from-literal=feishu-app-id=your_app_id \
   --from-literal=feishu-app-secret=your_app_secret
 
@@ -83,7 +83,7 @@ kubectl logs -f deployment/rms-openclaw
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
 | `MYSQL_USER` | `rms` | MySQL 用户名 |
-| `MYSQL_PASSWORD` | `rms123456` | MySQL 密码 |
+| `MYSQL_PASSWORD` | （必填，无默认值） | MySQL 密码，须由环境变量注入 |
 | `MYSQL_DATABASE` | `rms` | 数据库名 |
 | `RMS_PORT` | `3800` | RMS Web 端口 |
 | `OPENCLAW_ENABLED` | `true` | 是否启动 OpenClaw |
@@ -151,7 +151,7 @@ OpenClaw 配置文件位于 `/app/openclaw/openclaw.json`，首次启动时自�
 docker exec -it rms-openclaw bash
 
 # 查看 MySQL
-mysql -u rms -prms123456 rms
+MYSQL_PWD="$MYSQL_PASSWORD" mysql -u rms rms
 
 # 查看进程状态
 pm2 list
@@ -163,10 +163,10 @@ pm2 restart rms
 cat /var/log/supervisor/openclaw.log
 
 # 备份 MySQL
-docker exec rms-openclaw mysqldump -u rms -prms123456 rms > backup.sql
+docker exec -e MYSQL_PWD="$MYSQL_PASSWORD" rms-openclaw mysqldump -u rms rms > backup.sql
 
 # 恢复 MySQL
-docker exec -i rms-openclaw mysql -u rms -prms123456 rms < backup.sql
+docker exec -i -e MYSQL_PWD="$MYSQL_PASSWORD" rms-openclaw mysql -u rms rms < backup.sql
 ```
 
 ## 📐 架构
