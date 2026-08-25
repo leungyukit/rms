@@ -8,7 +8,12 @@
 #     容器内监听 0.0.0.0 是必要的（否则宿主访问不到），
 #     但宿主侧端口只绑 127.0.0.1，不裸奔到公网（见 compose）
 
-FROM docker.1ms.run/node:24-slim
+# ⚠️ 基础镜像必须钉死小版本，不要用 24-slim 这种浮动 tag。
+# 2026-08-25 事故：docker.1ms.run/node:24-slim 当时是 v24.14.1，而
+# openclaw@2026.7.1-2 的 engines.node 要求 ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"。
+# 差 0.0.1 个小版本，gateway 启动即退出 → 容器 Restarting 崩溃循环。
+# 换基础镜像或升 openclaw 版本时，务必重跑下面那条 engines 校验。
+FROM docker.1ms.run/node:24.15-slim
 
 ARG OPENCLAW_VERSION=2026.7.1-2
 ARG NPM_REGISTRY=https://registry.npmmirror.com
@@ -26,15 +31,42 @@ ENV NODE_ENV=production \
 WORKDIR /root/.openclaw
 
 # git/curl：OpenClaw 的 skill 与部分工具要用；ca-certificates 走 HTTPS
+# default-mysql-client：rms-mcp-server.js 直连数据库模式靠 mysql 二进制（execFileSync，不经 shell）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git tini \
+      curl ca-certificates git tini default-mysql-client \
     && rm -rf /var/lib/apt/lists/* \
     && npm config set registry "$NPM_REGISTRY" \
     && npm install -g "openclaw@${OPENCLAW_VERSION}" \
     && npm cache clean --force
 
+# RMS MCP Server 本体 + 它的运行时依赖。
+# 2026-08-25 排查发现：plugin-skills/rms 已在镜像里，但 rms-mcp-server.js 从未打进来，
+# 且容器内无依赖 —— MCP 分支必然 spawn 失败，Agent 只能靠 HTTP fallback（也缺 token）。
+# 依赖清单来自 `grep -oE "require\('[^.]...'\)" rms-mcp-server.js`：
+#   @modelcontextprotocol/sdk（server/mcp.js + server/stdio.js）、zod
+# 版本跟仓库 package.json 保持一致，别让容器里跑另一个大版本。
+COPY --chown=root:root rms-mcp-server.js /root/rms-mcp-server.js
+RUN npm install --no-save --prefix /root \
+      "@modelcontextprotocol/sdk@^1.29.0" \
+      zod \
+    && npm cache clean --force \
+    && cd /root && node -e "\
+      require('zod'); \
+      require('@modelcontextprotocol/sdk/server/mcp.js'); \
+      require('@modelcontextprotocol/sdk/server/stdio.js'); \
+      console.log('[build] MCP 依赖就绪'); \
+    "
+# ⚠️ 校验必须 cd /root 后用【包名】require，不能用绝对路径：
+# @modelcontextprotocol/sdk 走 exports 映射，真实文件在 dist/cjs/server/mcp.js，
+# 写 /root/node_modules/@modelcontextprotocol/sdk/server/mcp.js 会 Cannot find module。
+# 这也正好模拟了运行时：rms-mcp-server.js 在 /root 下，解析 /root/node_modules。
+
 # 配置与 workspace（openclaw.json 由 entrypoint 就地改写 token）
 COPY --chown=root:root openclaw-home/ ./
+
+# rms agent 的 workspace 种子。运行时 /root/.openclaw/workspace-rms 若挂了 volume，
+# 镜像内容会被盖住，所以放在 -seed 目录里由 entrypoint 兜底 cp -an。
+COPY --chown=root:root workspace-rms/ /root/.openclaw/workspace-rms-seed/
 
 # 清掉不该进镜像的缓存/日志/备份
 RUN rm -rf ./npm/* ./logs/* ./cache/* 2>/dev/null || true; \
@@ -42,6 +74,18 @@ RUN rm -rf ./npm/* ./logs/* ./cache/* 2>/dev/null || true; \
 
 COPY --chown=root:root openclaw-entrypoint.sh /usr/local/bin/openclaw-entrypoint.sh
 RUN chmod +x /usr/local/bin/openclaw-entrypoint.sh
+
+# 构建期校验 node 版本满足 openclaw 的 engines —— 不匹配就让构建失败，
+# 别把崩溃循环的镜像带到生产（2026-08-25 就是漏了这步）。
+RUN node -e "\
+  const semver = require('/usr/local/lib/node_modules/npm/node_modules/semver'); \
+  const want = require('/usr/local/lib/node_modules/openclaw/package.json').engines.node; \
+  if (!semver.satisfies(process.version, want)) { \
+    console.error('[FATAL] node ' + process.version + ' 不满足 openclaw engines: ' + want); \
+    process.exit(1); \
+  } \
+  console.log('[build] node ' + process.version + ' 满足 engines ' + want); \
+"
 
 EXPOSE 18789
 

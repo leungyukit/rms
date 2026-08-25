@@ -80,6 +80,10 @@ services:
       # 以后上 HTTPS 记得改 true
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       NODE_ENV: production
+      # Agent 路由：agent id 必须与 model 后缀配对，否则 Gateway 解析到默认 agent
+      # 且请求里的 model 字段被忽略（2026-08-25 实测 400 Unknown agent 'rms'）
+      OPENCLAW_AGENT_ID: ${OPENCLAW_AGENT_ID:-rms}
+      OPENCLAW_AGENT_MODEL: ${OPENCLAW_AGENT_MODEL:-openclaw/rms}
       PORT: 3800
       HOSTNAME: 0.0.0.0
       TZ: Asia/Shanghai
@@ -125,12 +129,33 @@ services:
       # entrypoint 强校验：未注入或是占位符/弱值直接拒绝启动
       GATEWAY_TOKEN: ${GATEWAY_TOKEN:?required}
       OPENCLAW_PORT: 18789
+      # ⚠️ 必填才能让 Agent 模式真正出结果。留空时 entrypoint 会清掉镜像里烤死的
+      # 失效模型名（tencentmaas/glm-5.2）并打警告，Gateway 起得来但答不出东西。
+      #
+      # 换模型只需改 .env 里这一个变量，两类走法 entrypoint 会自动分辨：
+      #   volcengine-plan/*  → 在 OpenClaw 内置目录里，零额外配置
+      #   volcengine/*       → 不在目录里，entrypoint 自动补 models.providers 注册
       OPENCLAW_MODEL: ${OPENCLAW_MODEL:-}
+      # 以下三项仅对 volcengine/* 自定义注册生效，留空用默认值（256000 / 32768 / 同 id）
+      OPENCLAW_MODEL_NAME: ${OPENCLAW_MODEL_NAME:-}
+      OPENCLAW_MODEL_CONTEXT_WINDOW: ${OPENCLAW_MODEL_CONTEXT_WINDOW:-}
+      OPENCLAW_MODEL_MAX_TOKENS: ${OPENCLAW_MODEL_MAX_TOKENS:-}
+      # RMS 专用 agent 的 id，需与 rms 服务的 OPENCLAW_AGENT_MODEL 后缀配对
+      OPENCLAW_AGENT_ID: ${OPENCLAW_AGENT_ID:-rms}
       # 飞书：留空则渠道保持关闭
       FEISHU_APP_ID: ${FEISHU_APP_ID:-}
       FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
       # 容器内访问 RMS 走服务名，不绕公网
       RMS_BASE_URL: http://rms:3800
+      # MCP 走直连库模式：HTTP 模式需要用户 Access Token，Agent 侧拿不到。
+      # 不显式指定的话，上面那行 RMS_BASE_URL 会让 MCP 误判成 HTTP 模式。
+      RMS_MCP_MODE: db
+      RMS_MCP_PATH: /root/rms-mcp-server.js
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rms}
+      MYSQL_USER: ${MYSQL_USER:-rms}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?必填}
       TZ: Asia/Shanghai
     ports:
       # 只绑回环！OpenClaw gateway 可执行任意命令，暴露到公网等于送出 root shell。
@@ -141,6 +166,10 @@ services:
       # 会话/记忆持久化，容器重建不丢
       - openclaw-agents:/root/.openclaw/agents
       - openclaw-workspace:/root/.openclaw/workspace
+      # rms agent 的 workspace 也要持久化：.rms-my.cnf（只读库凭据）放在这里，
+      # 2026-08-25 实测容器重建后它会消失，导致 agent 查库报「未找到有效只读连接配置」。
+      # 首次启动时 entrypoint 会从镜像里的 workspace-rms-seed/ 灌初始内容。
+      - openclaw-workspace-rms:/root/.openclaw/workspace-rms
     networks: [rms-net]
 
 networks:
@@ -153,4 +182,5 @@ volumes:
   rms-data:
   openclaw-agents:
   openclaw-workspace:
+  openclaw-workspace-rms:
   nginx-logs:
