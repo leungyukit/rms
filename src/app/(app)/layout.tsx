@@ -426,15 +426,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <I18nProvider>
     <div className="min-h-screen">
       {/* Top header */}
-      <header className="fixed top-0 left-0 right-0 h-14 bg-white flex items-center px-5 z-50 transition-all duration-300" style={{ marginLeft: sidebarCollapsed ? 80 : 220 }}>
+      <header className="fixed top-0 left-0 right-0 h-14 bg-[var(--card-bg)] border-b-[3px] border-[var(--border-c)] flex items-center px-5 z-50 transition-all duration-300" style={{ marginLeft: sidebarCollapsed ? 80 : 220 }}>
         <Link href="/chat" className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 rounded-lg object-cover" />
-          <span className="text-lg font-bold text-gray-800 tracking-tight">需求管理系统</span>
+          <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-cover border-2 border-[var(--border-c)]" />
+          <span className="text-lg font-extrabold uppercase tracking-tight text-[var(--foreground)]">需求管理系统</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-600 transition"
+            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title={sidebarCollapsed ? '展开菜单' : '折叠菜单'}
           >
             {sidebarCollapsed ? '☰' : '◀'}
@@ -444,32 +444,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               const next = toggleTheme();
               setTheme(next);
             }}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-600 transition"
+            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title="切换深色/浅色主题"
           >
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           <button
             onClick={() => setSearchOpen(!searchOpen)}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-600 transition"
+            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title="全局搜索"
           >
             🔍
           </button>
           <button
             onClick={() => setNotifOpen(!notifOpen)}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-600 transition relative"
+            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors relative"
             title="通知"
           >
             🔔
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-0.5 bg-[#FF1744] text-white text-[10px] font-extrabold border-2 border-[var(--border-c)] flex items-center justify-center">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-          <span className="text-sm text-gray-600 font-medium">{user?.display_name || '加载中...'}</span>
+          <div className="w-[2px] h-5 bg-[var(--border-c)] mx-1.5" />
+          <span className="text-sm font-bold text-[var(--foreground)]">{user?.display_name || '加载中...'}</span>
           <LocaleSwitcher />
           <LogoutButton />
         </div>
@@ -484,7 +484,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="sidebar-brand" style={{ padding: sidebarCollapsed ? '0.5rem' : '1.25rem 1.25rem 1rem', gap: 0, justifyContent: 'center' }}>
           {!sidebarCollapsed && (
             <Link href="/chat" className="sidebar-brand-icon" title="对话工作台">
-              <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 rounded-lg object-cover" />
+              <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-cover border-2 border-[var(--border-c)]" />
             </Link>
           )}
           <button
@@ -533,7 +533,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         <div className="p-4 border-t border-white/5">
           {!sidebarCollapsed ? (
-            <div className="text-xs text-gray-500 text-center">{user?.roleLabels?.join(' · ') || ''}</div>
+            <div className="text-xs font-bold uppercase text-[var(--muted-fg)] text-center">{user?.roleLabels?.join(' · ') || ''}</div>
           ) : (
             <div className="text-center">
               <div className="sidebar-link-badge">{user?.display_name?.[0] || '?'}</div>
@@ -551,19 +551,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="card-body" style={{ maxHeight: '24rem', overflowY: 'auto', padding: 0 }}>
             {notifications.length === 0 ? (
-              <div className="py-8 text-center text-gray-400">暂无通知</div>
+              <div className="py-8 text-center font-bold text-[var(--muted-fg)]">暂无通知</div>
             ) : (
               notifications.slice(0, 10).map(n => (
-                <div key={n.id} className={`px-4 py-3 border-b cursor-pointer ${n.is_read ? '' : 'bg-gray-100'}`} onClick={() => { if (n.link) router.push(n.link); }}>
-                  <div className="text-sm font-medium text-gray-800">{n.title}</div>
-                  <div className="text-xs text-gray-500 mt-1">{n.content}</div>
-                  <div className="text-xs text-gray-400 mt-1">{n.created_at}</div>
+                <div key={n.id} className={`px-4 py-3 border-b-2 border-[var(--border-c)] cursor-pointer hover:bg-[var(--primary-c)] ${n.is_read ? '' : 'bg-[#FFF0E0]'}`} onClick={() => { if (n.link) router.push(n.link); }}>
+                  <div className="text-sm font-bold text-[var(--foreground)]">{n.title}</div>
+                  <div className="text-xs font-semibold text-[var(--muted-fg)] mt-1">{n.content}</div>
+                  <div className="text-xs font-medium text-[var(--muted-fg)] opacity-70 mt-1">{n.created_at}</div>
                 </div>
               ))
             )}
           </div>
           <div className="px-4 py-2 border-t text-center">
-            <button onClick={() => { router.push('/notifications'); setNotifOpen(false); }} className="text-sm text-gray-900 hover:text-black font-medium underline">查看全部</button>
+            <button onClick={() => { router.push('/notifications'); setNotifOpen(false); }} className="text-sm font-bold underline decoration-2 underline-offset-4 hover:bg-[#00E5FF] px-1">查看全部</button>
           </div>
         </div>
       )}
@@ -585,51 +585,51 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             />
           </div>
           <div className="card-body" style={{ maxHeight: '24rem', overflowY: 'auto', padding: 0 }}>
-            {searching && <div className="py-4 text-center text-gray-400">搜索中...</div>}
+            {searching && <div className="py-4 text-center font-bold text-[var(--muted-fg)]">搜索中...</div>}
             {!searching && searchResults && (
               <>
                 {searchResults.requirements?.length > 0 && (
                   <div>
-                    <div className="px-4 py-2 text-xs text-gray-500 uppercase bg-gray-50 font-semibold tracking-wider">需求</div>
+                    <div className="px-4 py-2 text-xs uppercase bg-[#FF6B6B] text-white font-extrabold tracking-wider border-b-2 border-black">需求</div>
                     {searchResults.requirements.slice(0, 5).map((r: any) => (
-                      <div key={r.id} className="px-4 py-2 cursor-pointer border-b hover:bg-gray-50" onClick={() => { router.push(`/requirements/${r.id}`); setSearchOpen(false); }}>
-                        <div className="text-sm font-medium text-gray-800">{r.title}</div>
-                        <div className="text-xs text-gray-500">{r.status_label} · {r.priority_label}</div>
+                      <div key={r.id} className="px-4 py-2 cursor-pointer border-b-2 border-[var(--border-c)] hover:bg-[var(--primary-c)]" onClick={() => { router.push(`/requirements/${r.id}`); setSearchOpen(false); }}>
+                        <div className="text-sm font-bold text-[var(--foreground)]">{r.title}</div>
+                        <div className="text-xs font-semibold text-[var(--muted-fg)]">{r.status_label} · {r.priority_label}</div>
                       </div>
                     ))}
                   </div>
                 )}
                 {searchResults.projects?.length > 0 && (
                   <div>
-                    <div className="px-4 py-2 text-xs text-gray-500 uppercase bg-gray-50 font-semibold tracking-wider">项目</div>
+                    <div className="px-4 py-2 text-xs uppercase bg-[#FF6B6B] text-white font-extrabold tracking-wider border-b-2 border-black">项目</div>
                     {searchResults.projects.slice(0, 3).map((p: any) => (
-                      <div key={p.id} className="px-4 py-2 cursor-pointer border-b hover:bg-gray-50" onClick={() => { router.push(`/projects/${p.id}`); setSearchOpen(false); }}>
-                        <div className="text-sm font-medium text-gray-800">{p.name}</div>
-                        <div className="text-xs text-gray-500">{p.status}</div>
+                      <div key={p.id} className="px-4 py-2 cursor-pointer border-b-2 border-[var(--border-c)] hover:bg-[var(--primary-c)]" onClick={() => { router.push(`/projects/${p.id}`); setSearchOpen(false); }}>
+                        <div className="text-sm font-bold text-[var(--foreground)]">{p.name}</div>
+                        <div className="text-xs font-semibold text-[var(--muted-fg)]">{p.status}</div>
                       </div>
                     ))}
                   </div>
                 )}
                 {searchResults.users?.length > 0 && (
                   <div>
-                    <div className="px-4 py-2 text-xs text-gray-500 uppercase bg-gray-50 font-semibold tracking-wider">用户</div>
+                    <div className="px-4 py-2 text-xs uppercase bg-[#FF6B6B] text-white font-extrabold tracking-wider border-b-2 border-black">用户</div>
                     {searchResults.users.slice(0, 3).map((u: any) => (
-                      <div key={u.id} className="px-4 py-2 cursor-pointer border-b hover:bg-gray-50" onClick={() => { router.push(`/admin/users`); setSearchOpen(false); }}>
-                        <div className="text-sm font-medium text-gray-800">{u.display_name}</div>
-                        <div className="text-xs text-gray-500">@{u.username}</div>
+                      <div key={u.id} className="px-4 py-2 cursor-pointer border-b-2 border-[var(--border-c)] hover:bg-[var(--primary-c)]" onClick={() => { router.push(`/admin/users`); setSearchOpen(false); }}>
+                        <div className="text-sm font-bold text-[var(--foreground)]">{u.display_name}</div>
+                        <div className="text-xs font-semibold text-[var(--muted-fg)]">@{u.username}</div>
                       </div>
                     ))}
                   </div>
                 )}
                 {!searchResults.requirements?.length && !searchResults.projects?.length && !searchResults.users?.length && (
-                  <div className="py-4 text-center text-gray-400">未找到结果</div>
+                  <div className="py-4 text-center font-bold text-[var(--muted-fg)]">未找到结果</div>
                 )}
               </>
             )}
             {!searchResults && searchKeyword && !searching && (
-              <div className="py-4 text-center text-gray-400">输入关键词搜索</div>
+              <div className="py-4 text-center font-bold text-[var(--muted-fg)]">输入关键词搜索</div>
             )}
-            {!searchKeyword && <div className="py-4 text-center text-gray-400">输入关键词搜索需求、项目、用户</div>}
+            {!searchKeyword && <div className="py-4 text-center font-bold text-[var(--muted-fg)]">输入关键词搜索需求、项目、用户</div>}
           </div>
         </div>
       )}
@@ -643,7 +643,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {showChatFab && (
         <button
           onClick={() => setChatOpen(true)}
-          className="fixed right-6 bottom-6 w-14 h-14 bg-black text-white rounded-full shadow-xl hover:bg-gray-800 transition-all flex items-center justify-center z-40 hover:scale-110 hover:shadow-2xl"
+          className="fixed right-6 bottom-6 w-14 h-14 bg-[#FFD600] text-black border-[3px] border-black font-extrabold text-xl hover:-translate-x-1 hover:-translate-y-1 active:translate-x-0 active:translate-y-0 transition-transform flex items-center justify-center z-40"
+          style={{ boxShadow: '6px 6px 0 #1A1A1A' }}
           title="对话工作台"
         >
           <span className="text-2xl">💬</span>
@@ -653,15 +654,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Floating chat dialog - WeChat style, right side */}
       {chatOpen && (
         <div className="fixed right-0 top-0 bottom-0 z-50 flex" style={{ width: '420px' }}>
-          <div className="flex-1 bg-white shadow-2xl flex flex-col overflow-hidden border-l border-gray-200">
+          <div className="flex-1 bg-[var(--card-bg)] flex flex-col overflow-hidden border-l-[3px] border-[var(--border-c)]">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-gradient-to-r from-gray-800 to-black text-white">
+            <div className="flex items-center justify-between px-4 py-3 border-b-[3px] border-black bg-[#FFD600] text-black">
               <div className="flex items-center gap-3">
                 <span className="text-xl">💬</span>
                 <span className="font-semibold text-base">对话工作台</span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={clearChat} className="text-xs text-gray-300 hover:text-white px-2 py-1">
+                <button onClick={clearChat} className="text-xs font-bold text-black hover:bg-black hover:text-[#FFD600] border-2 border-black px-2 py-1">
                   清空
                 </button>
                 <button onClick={() => setChatOpen(false)} className="text-white/80 hover:text-white text-2xl leading-none px-2">
@@ -671,15 +672,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Mode tabs */}
-            <div className="flex gap-1 px-4 py-2 bg-gray-50 border-b">
+            <div className="flex gap-1 px-4 py-2 bg-[var(--muted)] border-b-[3px] border-[var(--border-c)]">
               {(['basic', 'ai', 'agent'] as const).map(mode => (
                 <button
                   key={mode}
                   onClick={() => switchMode(mode)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  className={`px-3 py-1.5 text-xs font-extrabold uppercase border-2 border-[var(--border-c)] transition-transform ${
                     chatMode === mode
-                      ? 'bg-black text-white'
-                      : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      ? 'bg-[#FFD600] text-black -translate-x-0.5 -translate-y-0.5 shadow-[3px_3px_0_var(--border-c)]'
+                      : 'bg-[var(--card-bg)] text-[var(--foreground)] hover:bg-[#00E5FF] hover:text-black'
                   }`}
                 >
                   {mode === 'basic' ? '基础' : mode === 'ai' ? 'AI 助手' : 'Agent'}
@@ -688,25 +689,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-100">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--background)]">
               {messages.length === 0 && (
-                <div className="text-center text-gray-400 py-8">
+                <div className="text-center font-bold text-[var(--muted-fg)] py-8">
                   <div className="text-3xl mb-2">💬</div>
                   <p className="text-sm mb-3">输入命令快速跳转，或开始对话</p>
                   <div className="flex flex-wrap gap-1.5 justify-center mb-3">
-                    <button onClick={() => setInput('新建需求')} className="px-2 py-1 bg-white border rounded-lg text-xs hover:bg-gray-100">新建需求</button>
-                    <button onClick={() => setInput('需求池')} className="px-2 py-1 bg-white border rounded-lg text-xs hover:bg-gray-100">需求池</button>
-                    <button onClick={() => setInput('看板')} className="px-2 py-1 bg-white border rounded-lg text-xs hover:bg-gray-100">看板</button>
-                    <button onClick={() => setInput('系统配置')} className="px-2 py-1 bg-white border rounded-lg text-xs hover:bg-gray-100">系统配置</button>
+                    <button onClick={() => setInput('新建需求')} className="px-2 py-1 bg-[var(--card-bg)] border-2 border-[var(--border-c)] text-xs font-bold hover:bg-[var(--primary-c)]">新建需求</button>
+                    <button onClick={() => setInput('需求池')} className="px-2 py-1 bg-[var(--card-bg)] border-2 border-[var(--border-c)] text-xs font-bold hover:bg-[var(--primary-c)]">需求池</button>
+                    <button onClick={() => setInput('看板')} className="px-2 py-1 bg-[var(--card-bg)] border-2 border-[var(--border-c)] text-xs font-bold hover:bg-[var(--primary-c)]">看板</button>
+                    <button onClick={() => setInput('系统配置')} className="px-2 py-1 bg-[var(--card-bg)] border-2 border-[var(--border-c)] text-xs font-bold hover:bg-[var(--primary-c)]">系统配置</button>
                   </div>
                 </div>
               )}
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                  <div className={`max-w-[85%] px-3 py-2 border-2 border-[var(--border-c)] shadow-[4px_4px_0_var(--border-c)] ${
                     m.role === 'user'
-                      ? 'bg-black text-white rounded-br-md'
-                      : 'bg-white border shadow-sm text-gray-800 rounded-bl-md'
+                      ? 'bg-[#FFD600] text-black font-medium'
+                      : 'bg-[var(--card-bg)] text-[var(--foreground)]'
                   }`}>
                     {m.role === 'assistant' ? (
                       <div className="text-sm md-content">{m.content}</div>
@@ -718,11 +719,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               ))}
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-white border rounded-2xl rounded-bl-md px-4 py-2 shadow-sm">
+                  <div className="bg-[var(--card-bg)] border-2 border-[var(--border-c)] px-4 py-2 shadow-[4px_4px_0_var(--border-c)]">
                     <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-100" />
-                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-200" />
+                      <span className="w-2 h-2 bg-[#FF1744] animate-bounce" />
+                      <span className="w-2 h-2 bg-[#FFD600] animate-bounce delay-100" />
+                      <span className="w-2 h-2 bg-[#00E5FF] animate-bounce delay-200" />
                     </div>
                   </div>
                 </div>
@@ -730,13 +731,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Input */}
-            <div className="border-t border-gray-200 bg-white">
+            <div className="border-t-[3px] border-[var(--border-c)] bg-[var(--card-bg)]">
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder="输入消息，Shift+Enter 换行..."
-                className="w-full p-3 text-sm border-none focus:ring-0 resize-none"
+                className="w-full p-3 text-sm font-medium border-none focus:ring-0 resize-none bg-transparent text-[var(--foreground)]"
                 style={{ minHeight: '100px' }}
               />
               <div className="px-3 pb-3 flex justify-end">
