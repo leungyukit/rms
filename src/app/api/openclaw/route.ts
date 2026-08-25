@@ -63,9 +63,19 @@ async function getWorkspaceBase() {
     const row = (await db.prepare("SELECT value FROM system_config WHERE `key` = 'openclaw_workspace_base'").get()) as any;
     if (row?.value && fs.existsSync(row.value)) return row.value;
   } catch {}
-  const defaultPath = path.join('/home/itd3/www/rms', 'data', 'openclaw-workspaces');
-  if (fs.existsSync(defaultPath)) return defaultPath;
+  // 不要硬编码开发机的绝对路径：数据从 Windows 开发机导入时，
+  // user_openclaw_sessions.workspace_dir 里躺过 `D:\workspace\...`（2026-08-25 清理）。
+  // 现在一律以进程 cwd 为准，保证跨平台/跨机器都指向真实存在的目录。
   return path.join(process.cwd(), 'data', 'openclaw-workspaces');
+}
+
+// 只接受本机绝对路径，挡掉 Windows 盘符（`D:\...`）这类跨平台脏数据。
+// 历史上 user_openclaw_sessions 里存过开发机路径，在 Linux 上永远 stat 不到。
+function isUsableWorkspaceDir(dir: unknown): dir is string {
+  return typeof dir === 'string'
+    && dir.startsWith('/')
+    && !/^[A-Za-z]:[\\/]/.test(dir)
+    && fs.existsSync(dir);
 }
 
 // Call OpenClaw via OpenAI-compatible /v1/chat/completions endpoint
@@ -186,8 +196,17 @@ export async function POST(req: NextRequest) {
     if (existing) {
       // Generate new session_key if missing
       const sessionKey = existing.session_key || `rms-user-${user.id}-${Date.now()}`;
+      // 旧记录的 workspace_dir 可能是开发机路径（历史上存过 `D:\workspace\...`），
+      // 在本机根本不存在。这种情况重建到当前平台的正确位置并写回库，
+      // 别把脏值原样返回给前端。
+      let workspaceDir = existing.workspace_dir;
+      if (!isUsableWorkspaceDir(workspaceDir)) {
+        workspaceDir = path.join(await getWorkspaceBase(), `user-${user.id}`);
+        fs.mkdirSync(workspaceDir, { recursive: true });
+        (await db.prepare('UPDATE user_openclaw_sessions SET workspace_dir = ? WHERE user_id = ?').run(workspaceDir, user.id));
+      }
       (await db.prepare('UPDATE user_openclaw_sessions SET enabled = 1, session_key = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(sessionKey, user.id));
-      return NextResponse.json({ success: true, workspace_dir: existing.workspace_dir, session_key: sessionKey });
+      return NextResponse.json({ success: true, workspace_dir: workspaceDir, session_key: sessionKey });
     }
 
     const workspaceBase = await getWorkspaceBase();
