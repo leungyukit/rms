@@ -239,5 +239,72 @@ export function ensureCustomReportTables() {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_ds_type ON data_sources(type)`);
   }
 
+  seedSystemDataSources();
   ensured = true;
+}
+
+/**
+ * 预置系统数据源（is_system = 1）。
+ *
+ * 背景（2026-08-27 二次修复）：
+ *   「新建报表 → 编辑图表 → 数据源」下拉框全空。
+ *   前端是 `dataSources.map(...)` 直接渲染，数组为空就一个 option 也没有。
+ *   这 5 条种子数据原本只存在于 `scripts/migrate-reports.mjs`，
+ *   而那个脚本是写给 SQLite 的，从来没在 MySQL 上跑过 ——
+ *   于是表建出来了却是空的。
+ *
+ * 幂等：按 name 逐条查存在，不依赖唯一索引，也能修补上次只建了空表的部署。
+ * 注意：这些 query 会被 `/api/data-sources/query` 的安全校验拦一道
+ * （仅 SELECT/WITH、单语句、禁感斄表），所以必须全是纯只读单语句。
+ */
+function seedSystemDataSources() {
+  const db = getDb();
+  const seeds = [
+    {
+      name: '需求按状态统计',
+      description: '统计不同状态的需求数量',
+      query: 'SELECT status, COUNT(*) as count FROM requirements GROUP BY status',
+      config: JSON.stringify({ xKey: 'status', yKey: 'count' }),
+    },
+    {
+      name: '需求按优先级统计',
+      description: '统计不同优先级的需求数量',
+      query: 'SELECT priority, COUNT(*) as count FROM requirements GROUP BY priority',
+      config: JSON.stringify({ xKey: 'priority', yKey: 'count' }),
+    },
+    {
+      name: '需求按业务方统计',
+      description: '统计不同业务部门的需求数量',
+      query: 'SELECT business_unit, COUNT(*) as count FROM requirements WHERE business_unit IS NOT NULL GROUP BY business_unit',
+      config: JSON.stringify({ xKey: 'business_unit', yKey: 'count' }),
+    },
+    {
+      name: '需求按创建时间趋势',
+      description: '按日期统计需求创建数量',
+      query: 'SELECT DATE(created_at) as date, COUNT(*) as count FROM requirements GROUP BY DATE(created_at) ORDER BY date',
+      config: JSON.stringify({ xKey: 'date', yKey: 'count' }),
+    },
+    {
+      name: '项目按状态统计',
+      description: '统计不同状态的项目数量',
+      query: 'SELECT status, COUNT(*) as count FROM projects GROUP BY status',
+      config: JSON.stringify({ xKey: 'status', yKey: 'count' }),
+    },
+  ];
+
+  for (const s of seeds) {
+    try {
+      const existing = db.prepare(
+        'SELECT id FROM data_sources WHERE name = ? AND is_system = 1'
+      ).get(s.name) as any;
+      if (existing) continue;
+      db.prepare(
+        'INSERT INTO data_sources (name, description, type, query, config, is_system, created_by) VALUES (?, ?, ?, ?, ?, 1, NULL)'
+      ).run(s.name, s.description, 'sql', s.query, s.config);
+    } catch (e) {
+      // 单条种子失败不能让整个页面 500，其余数据源仍应可用
+      // eslint-disable-next-line no-console
+      console.error('[custom-report-migrations] seed 失败:', s.name, (e as any)?.message || e);
+    }
+  }
 }
