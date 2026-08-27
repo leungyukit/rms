@@ -1,5 +1,6 @@
 import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
 import { getAsyncDb } from '@/lib/db';
+import { ensureCustomReportTables } from '@/lib/custom-report-migrations';
 
 export async function GET() {
   try {
@@ -8,6 +9,7 @@ export async function GET() {
       return Response.json({ error: '未登录' }, { status: 401 });
     }
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const rows = await db.prepare(
       'SELECT * FROM data_sources WHERE is_system = 1 OR created_by = ? ORDER BY is_system DESC, name'
@@ -33,6 +35,8 @@ export async function POST(request: Request) {
     }
 
     const { name, description, type, query, config } = await request.json();
+
+    ensureCustomReportTables();
     const db = getAsyncDb();
     
     const result = await db.prepare(

@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth';
 import { getAsyncDb } from '@/lib/db';
+import { ensureCustomReportTables } from '@/lib/custom-report-migrations';
 
 export async function GET() {
   try {
@@ -8,6 +9,7 @@ export async function GET() {
       return Response.json({ error: '未登录' }, { status: 401 });
     }
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const rows = await db.prepare(
       'SELECT * FROM reports WHERE created_by = ? ORDER BY updated_at DESC'
@@ -35,6 +37,7 @@ export async function POST(request: Request) {
 
     const { name, description, type, config, layout } = await request.json();
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const result = await db.prepare(
       'INSERT INTO reports (name, description, type, config, layout, created_by) VALUES (?, ?, ?, ?, ?, ?)'

@@ -15,6 +15,10 @@ interface Report {
 export default function CustomReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  // 原先 createReport 失败只 console.error，界面完全静默 → 用户看到的就是「点了没反应」。
+  // 2026-08-27：表不存在导致 500，整个功能看上去像按钮坏了，排查时毫无线索。
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadReports();
@@ -33,6 +37,9 @@ export default function CustomReportsPage() {
   }
 
   async function createReport() {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
     try {
       const res = await fetch('/api/custom-reports', {
         method: 'POST',
@@ -43,12 +50,23 @@ export default function CustomReportsPage() {
           type: 'custom'
         })
       });
-      const data = await res.json();
-      if (data.report) {
-        window.location.href = `/custom-reports/${data.report.id}/edit`;
+      const raw = await res.text().catch(() => '');
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { /* 非 JSON 响应 */ }
+
+      if (!res.ok) {
+        setError(data.error || `创建失败（HTTP ${res.status}）`);
+        return;
       }
-    } catch (e) {
-      console.error('Failed to create report:', e);
+      if (!data.report?.id) {
+        setError('创建失败：服务端未返回报表 ID');
+        return;
+      }
+      window.location.href = `/custom-reports/${data.report.id}/edit`;
+    } catch (e: any) {
+      setError(`创建失败：${e?.message || '网络错误'}`);
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -72,12 +90,21 @@ export default function CustomReportsPage() {
             <h1 className="page-title">📊 自定义报表</h1>
             <p className="page-subtitle">创建和管理自定义报表</p>
           </div>
-          <button onClick={createReport} className="btn btn-primary flex items-center gap-2">
+          <button onClick={createReport} disabled={creating} className="btn btn-primary flex items-center gap-2 disabled:opacity-60">
             <Plus className="w-4 h-4" />
-            新建报表
+            {creating ? '创建中...' : '新建报表'}
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="card border-red-200 bg-red-50">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-sm text-red-700 whitespace-pre-wrap">⚠️ {error}</div>
+            <button onClick={() => setError(null)} className="text-xs text-red-500 hover:text-red-700">关闭</button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="card">

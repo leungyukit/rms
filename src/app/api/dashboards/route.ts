@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth';
 import { getAsyncDb } from '@/lib/db';
+import { ensureCustomReportTables } from '@/lib/custom-report-migrations';
 
 export async function GET() {
   try {
@@ -8,6 +9,7 @@ export async function GET() {
       return Response.json({ error: '未登录' }, { status: 401 });
     }
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     
     // 获取用户关联的dashboard
@@ -40,6 +42,8 @@ export async function POST(request: Request) {
     }
 
     const { name, description, is_default, config, layout } = await request.json();
+
+    ensureCustomReportTables();
     const db = getAsyncDb();
 
     // 如果设为默认，先取消其他的默认

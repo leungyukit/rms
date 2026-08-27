@@ -17,6 +17,9 @@ interface Dashboard {
 export default function CustomDashboardsPage() {
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
   const [loading, setLoading] = useState(true);
+  // 同 custom-reports：原先失败只 console.error，界面静默 → 表现为「点新建没反应」。
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboards();
@@ -35,6 +38,9 @@ export default function CustomDashboardsPage() {
   }
 
   async function createDashboard() {
+    if (creating) return;
+    setCreating(true);
+    setError(null);
     try {
       const res = await fetch('/api/dashboards', {
         method: 'POST',
@@ -45,12 +51,23 @@ export default function CustomDashboardsPage() {
           is_default: false
         })
       });
-      const data = await res.json();
-      if (data.dashboard) {
-        window.location.href = `/custom-dashboards/${data.dashboard.id}/edit`;
+      const raw = await res.text().catch(() => '');
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { /* 非 JSON 响应 */ }
+
+      if (!res.ok) {
+        setError(data.error || `创建失败（HTTP ${res.status}）`);
+        return;
       }
-    } catch (e) {
-      console.error('Failed to create dashboard:', e);
+      if (!data.dashboard?.id) {
+        setError('创建失败：服务端未返回 Dashboard ID');
+        return;
+      }
+      window.location.href = `/custom-dashboards/${data.dashboard.id}/edit`;
+    } catch (e: any) {
+      setError(`创建失败：${e?.message || '网络错误'}`);
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -74,12 +91,21 @@ export default function CustomDashboardsPage() {
             <h1 className="page-title">📈 自定义Dashboard</h1>
             <p className="page-subtitle">创建和管理自定义Dashboard</p>
           </div>
-          <button onClick={createDashboard} className="btn btn-primary flex items-center gap-2">
+          <button onClick={createDashboard} disabled={creating} className="btn btn-primary flex items-center gap-2 disabled:opacity-60">
             <Plus className="w-4 h-4" />
-            新建Dashboard
+            {creating ? '创建中...' : '新建Dashboard'}
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="card border-red-200 bg-red-50">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-sm text-red-700 whitespace-pre-wrap">⚠️ {error}</div>
+            <button onClick={() => setError(null)} className="text-xs text-red-500 hover:text-red-700">关闭</button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="card">

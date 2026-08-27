@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth';
 import { getAsyncDb } from '@/lib/db';
+import { ensureCustomReportTables } from '@/lib/custom-report-migrations';
 
 export async function GET(
   request: Request,
@@ -12,6 +13,7 @@ export async function GET(
       return Response.json({ error: '未登录' }, { status: 401 });
     }
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const id = parseInt(idStr);
     
@@ -57,6 +59,8 @@ export async function PUT(
     }
 
     const { name, description, config, layout, widgets } = await request.json();
+
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const id = parseInt(idStr);
 
@@ -134,6 +138,7 @@ export async function DELETE(
       return Response.json({ error: '未登录' }, { status: 401 });
     }
 
+    ensureCustomReportTables();
     const db = getAsyncDb();
     const id = parseInt(idStr);
 

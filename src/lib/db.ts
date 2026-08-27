@@ -73,6 +73,24 @@ function normalizeSqliteSql(sql: string): string {
     .replace(/\bALTER\s+TABLE\s+(\S+)\s+DROP\s+COLUMN\s+(\S+)/gi, 'ALTER TABLE $1 DROP COLUMN $2');
 }
 
+/**
+ * 将 SQLite 方言转换为 MySQL 方言。
+ *
+ * 背景（2026-08-27）：normalizeSqliteSql 只做「MySQL → SQLite」单向转换，
+ * 反向完全没人管。于是代码里写的 `INSERT OR IGNORE INTO`（SQLite 语法）
+ * 打到 MySQL 上直接 `ERROR 1064 syntax error near 'OR IGNORE INTO'`。
+ * 线上 /custom-dashboards 新建失败的第二个根因就是这个。
+ *
+ * 只做保守的等价替换，不猜语义：
+ *   INSERT OR IGNORE INTO  → INSERT IGNORE INTO
+ *   INSERT OR REPLACE INTO → REPLACE INTO
+ */
+function normalizeMysqlSql(sql: string): string {
+  return sql
+    .replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT IGNORE INTO')
+    .replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'REPLACE INTO');
+}
+
 function getSqliteDb(): Database.Database {
   if (!sqliteDb) {
     const dir = path.dirname(DB_PATH);
@@ -133,7 +151,7 @@ function mysqlExec(sql: string): string {
 }
 
 function mysqlExecMulti(sql: string): void {
-  const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
+  const stmts = normalizeMysqlSql(sql).split(';').map(s => s.trim()).filter(Boolean);
   for (const stmt of stmts) {
     mysqlExec(stmt);
   }
@@ -225,7 +243,7 @@ const mysqlTxStore = new AsyncLocalStorage<any>();
 class MySqlAsyncPreparedStatement {
   private baseSql: string;
   constructor(sql: string) {
-    this.baseSql = sql;
+    this.baseSql = normalizeMysqlSql(sql);
   }
   private buildSql(params: any[]): string {
     if (params.length === 0) return this.baseSql;
@@ -262,7 +280,7 @@ class MySqlAsyncDatabase {
   }
   async exec(sql: string): Promise<void> {
     const runner = mysqlTxStore.getStore() || getMysql2Pool();
-    const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
+    const stmts = normalizeMysqlSql(sql).split(';').map(s => s.trim()).filter(Boolean);
     for (const stmt of stmts) {
       await runner.query(stmt);
     }
@@ -395,7 +413,7 @@ class MySqlPreparedStatement {
   private columnNames: string[] = [];
 
   constructor(sql: string) {
-    this.baseSql = sql;
+    this.baseSql = normalizeMysqlSql(sql);
     let depth = 0;
     let selectEnd = -1;
     const upperSql = sql.toUpperCase();
