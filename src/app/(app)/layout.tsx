@@ -71,7 +71,10 @@ const ANALYSIS_ITEMS = [
   { href: '/workload', icon: '👥', label: 'nav.workload' },
   { href: '/calendar', icon: '📆', label: 'nav.calendar' },
   { href: '/custom-reports', icon: '📊', label: 'nav.customReports' },
-  { href: '/custom-dashboards', icon: '🎛️', label: 'nav.customDashboards' },
+  // 2026-08-27 移除「自定义仪表盘」：与「自定义报表」功能重复。
+  // dashboards/dashboard_widgets 与 reports/report_widgets 表结构同构，
+  // 共用 /api/data-sources 与同一个 ChartRenderer，仅多 is_default/is_favorite 标记。
+  // 数据表与历史数据保留未删；回滚见 ~/rms-backup-custom-dashboards-20260827。
   { href: '/data-sources', icon: '📊', label: 'nav.dataSources' },
   { href: '/db-explorer', icon: '🗄️', label: 'nav.dbExplorer' },
 ];
