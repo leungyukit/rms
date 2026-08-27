@@ -59,6 +59,11 @@ export default function ChatPage() {
   const [openclawReady, setOpenclawReady] = useState(false);
   const [openclawEnabling, setOpenclawEnabling] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  // send() 内部新建的会话 id。activeId 变化会触发 loadMessages，但此时消息还没落库，
+  // 拉回来的空数组会把本地的用户消息和待返回的回复一起冲掉（Agent 模式慢，必中）。
+  const skipLoadRef = useRef<string | null>(null);
+  // 发送进行中：任何迟到的 loadMessages 响应都不许覆盖本地消息。
+  const sendingRef = useRef(false);
 
   const loadConversations = async () => {
     const res = await fetch('/api/chat/conversations', { credentials: 'include' }).catch(() => null);
@@ -69,8 +74,11 @@ export default function ChatPage() {
   };
 
   const loadMessages = async (convId: string) => {
+    if (sendingRef.current) return;
     setLoading(true);
     const res = await fetch(`/api/chat/conversations/${convId}/messages`, { credentials: 'include' }).catch(() => null);
+    // 请求期间用户已经开始发消息：丢弃这次结果，别覆盖本地状态
+    if (sendingRef.current) { setLoading(false); return; }
     if (res?.ok) {
       const raw = await res.text().catch(() => '');
       const data = raw ? JSON.parse(raw) : {};
@@ -95,7 +103,13 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (activeId) loadMessages(activeId);
+    if (!activeId) return;
+    // 该会话是本次 send() 刚创建的，消息都在本地内存里，跳过一次远端拉取
+    if (skipLoadRef.current === activeId) {
+      skipLoadRef.current = null;
+      return;
+    }
+    loadMessages(activeId);
   }, [activeId]);
 
   useEffect(() => {
@@ -118,6 +132,7 @@ export default function ChatPage() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    sendingRef.current = true;
     try {
       let assistantContent = '';
       let knowledgeRefs: any[] = [];
@@ -129,20 +144,23 @@ export default function ChatPage() {
         if (r.ok) {
           const d = await r.json();
           convId = d.id;
+          skipLoadRef.current = d.id;
           setActiveId(d.id);
           loadConversations();
         }
       }
 
       if (chatMode === 'agent') {
-        if (!openclawReady) {
-          const enabled = await ensureOpenClaw();
-          if (!enabled) {
+        // openclawReady 在这个闭包里是旧值（setState 不同步），必须用 ensureOpenClaw 的返回值判断
+        let ready = openclawReady;
+        if (!ready) {
+          ready = await ensureOpenClaw();
+          if (!ready) {
             assistantContent = '⚠️ 无法启用 OpenClaw，请检查高级配置中的 Gateway 地址和 Token 是否正确，以及 OpenClaw Gateway 是否已启动。';
             // 不 return，走到底部统一持久化
           }
         }
-        if (openclawReady || assistantContent === '') {
+        if (ready) {
           // Agent mode: call OpenClaw API
           const res = await fetch('/api/openclaw', {
             method: 'POST',
@@ -219,6 +237,7 @@ export default function ChatPage() {
     } catch (e) {
       setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: '❌ 发送失败，请重试', timestamp: new Date().toISOString() }]);
     }
+    sendingRef.current = false;
     setLoading(false);
   };
 
