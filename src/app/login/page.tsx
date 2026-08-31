@@ -117,7 +117,7 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] p-4">
       <div className="w-full max-w-md">
         <div className="mb-8">
-          <img src="/logo.png" alt="RMS Logo" className="w-16 h-16 object-cover mb-4 border-[3px] border-black" style={{ boxShadow: '6px 6px 0 #1A1A1A' }} />
+          <img src="/logo.png" alt="RMS Logo" className="w-16 h-16 object-contain mb-4" />
           <h1 className="text-3xl font-extrabold text-black uppercase tracking-tight">{t('auth.loginSubtitle')}</h1>
           <p className="text-sm font-semibold text-[#444] mt-1">{t('requirement.title')}{t('common.search')}{t('dashboard.myRequirements')}</p>
         </div>

@@ -431,7 +431,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Top header */}
       <header className="fixed top-0 left-0 right-0 h-14 bg-[var(--card-bg)] border-b-[3px] border-[var(--border-c)] flex items-center px-5 z-50 transition-all duration-300" style={{ marginLeft: sidebarCollapsed ? 80 : 220 }}>
         <Link href="/chat" className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-cover border-2 border-[var(--border-c)]" />
+          <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-contain" />
           <span className="text-lg font-extrabold uppercase tracking-tight text-[var(--foreground)]">需求管理系统</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
@@ -486,8 +486,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className="sidebar-brand" style={{ padding: sidebarCollapsed ? '0.5rem' : '1.25rem 1.25rem 1rem', gap: 0, justifyContent: 'center' }}>
           {!sidebarCollapsed && (
-            <Link href="/chat" className="sidebar-brand-icon" title="对话工作台">
-              <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-cover border-2 border-[var(--border-c)]" />
+            <Link href="/chat" className="sidebar-brand-icon" title="对话工作台" style={{ border: 'none', background: 'transparent' }}>
+              <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-contain" />
             </Link>
           )}
           <button
