@@ -64,10 +64,14 @@ export function ensureSlaTables() {
     ['sla_rules_low',    '{"approachingPct":90,"overdueGraceDays":2,"escalateAfterDays":5}', '低优先级规则 (JSON)', '{"approachingPct":90, "overdueGraceDays":2, "escalateAfterDays":5}', 'sla', 'text', 202],
   ];
   for (const [key, value, label, description, category, type, sort_order] of configs) {
-    db.prepare(`
-      INSERT IGNORE INTO system_config (key, value, label, description, category, type, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(key, value, label, description, category, type, sort_order);
+    db.prepare(
+      isMysql
+        ? `INSERT INTO system_config (\`key\`, \`value\`, \`label\`, \`description\`, \`category\`, \`type\`, \`sort_order\`)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), sort_order = VALUES(sort_order)`
+        : `INSERT OR IGNORE INTO system_config (key, value, label, description, category, type, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(key, value, label, description, category, type, sort_order);
   }
 
   ensured = true;
@@ -79,7 +83,7 @@ export function ensureSlaTables() {
 export function getSlaConfig() {
   ensureSlaTables();
   const db = getDb();
-  const rows = db.prepare(`SELECT key, value FROM system_config WHERE category = 'sla'`).all() as any[];
+  const rows = db.prepare(`SELECT \`key\`, \`value\` FROM system_config WHERE category = 'sla'`).all() as any[];
   const cfg: Record<string, any> = {};
   for (const r of rows) cfg[r.key] = r.value;
 

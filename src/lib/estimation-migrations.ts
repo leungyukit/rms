@@ -79,10 +79,14 @@ export function ensureEstimationFields() {
     ],
   ];
   for (const [key, value, label, description, category, type, sort_order] of configs) {
-    db.prepare(`
-      INSERT IGNORE INTO system_config (key, value, label, description, category, type, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(key, value, label, description, category, type, sort_order);
+    db.prepare(
+      isMysql
+        ? `INSERT INTO system_config (\`key\`, \`value\`, \`label\`, \`description\`, \`category\`, \`type\`, \`sort_order\`)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), sort_order = VALUES(sort_order)`
+        : `INSERT OR IGNORE INTO system_config (key, value, label, description, category, type, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(key, value, label, description, category, type, sort_order);
   }
 
   ensured = true;
@@ -94,7 +98,7 @@ export function ensureEstimationFields() {
 export function getEstimationConfig() {
   ensureEstimationFields();
   const db = getDb();
-  const rows = db.prepare(`SELECT key, value FROM system_config WHERE category = 'estimation'`).all() as any[];
+  const rows = db.prepare(`SELECT \`key\`, \`value\` FROM system_config WHERE category = 'estimation'`).all() as any[];
   const cfg: Record<string, any> = {};
   for (const r of rows) cfg[r.key] = r.value;
   return {

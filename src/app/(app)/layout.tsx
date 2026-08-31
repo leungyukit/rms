@@ -437,7 +437,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
+            className="w-8 h-8 rounded hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title={sidebarCollapsed ? '展开菜单' : '折叠菜单'}
           >
             {sidebarCollapsed ? '☰' : '◀'}
@@ -447,26 +447,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               const next = toggleTheme();
               setTheme(next);
             }}
-            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
+            className="w-8 h-8 rounded hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title="切换深色/浅色主题"
           >
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           <button
             onClick={() => setSearchOpen(!searchOpen)}
-            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
+            className="w-8 h-8 rounded hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors"
             title="全局搜索"
           >
             🔍
           </button>
           <button
             onClick={() => setNotifOpen(!notifOpen)}
-            className="w-8 h-8 border-2 border-transparent hover:border-[var(--border-c)] hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors relative"
+            className="w-8 h-8 rounded hover:bg-[var(--primary-c)] flex items-center justify-center text-[var(--foreground)] transition-colors relative"
             title="通知"
           >
             🔔
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-0.5 bg-[#FF1744] text-white text-[10px] font-extrabold border-2 border-[var(--border-c)] flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-0.5 bg-[#FF1744] text-white text-[10px] font-extrabold rounded-full flex items-center justify-center">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
