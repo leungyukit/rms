@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRequirementOptions } from '@/lib/use-requirement-options';
+import { todayLocal, diffDaysLocal } from '@/lib/date-local';
 
 const STATUS_LABEL: Record<string, string> = {
   todo: '待办',
@@ -53,8 +54,8 @@ interface ChecklistAggregate {
 
 function dueBadge(due: string | null, status: string): { label: string; color: string } | null {
   if (!due || status === 'done') return null;
-  const today = new Date().toISOString().slice(0, 10);
-  if (due < today) return { label: `超期 ${Math.ceil((new Date(today).getTime() - new Date(due).getTime()) / 86400000)} 天`, color: 'text-red-600 bg-red-50 px-1.5 py-0.5 rounded' };
+  const today = todayLocal();
+  if (due < today) return { label: `超期 ${diffDaysLocal(today, due)} 天`, color: 'text-red-600 bg-red-50 px-1.5 py-0.5 rounded' };
   if (due === today) return { label: '今日截止', color: 'text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded' };
   const days = Math.ceil((new Date(due).getTime() - new Date(today).getTime()) / 86400000);
   if (days <= 3) return { label: `${days} 天后`, color: 'text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded' };

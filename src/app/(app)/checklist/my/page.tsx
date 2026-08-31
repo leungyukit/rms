@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { todayLocal } from '@/lib/date-local';
 
 const STATUS_LABEL: Record<string, string> = {
   todo: '待办', in_progress: '进行中', done: '已完成', blocked: '阻塞',
@@ -16,7 +17,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 function dueClass(due: string | null, status: string): string {
   if (!due || status === 'done') return 'text-gray-400';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   if (due < today) return 'text-red-600 font-medium';
   if (due === today) return 'text-orange-600 font-medium';
   return 'text-green-600';
@@ -50,7 +51,7 @@ export default function MyChecklistPage() {
     await load();
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const overdue = items.filter(i => i.due_date && i.due_date < today && i.status !== 'done');
   const todayItems = items.filter(i => i.due_date === today && i.status !== 'done');
   const future = items.filter(i => i.due_date && i.due_date > today && i.status !== 'done');

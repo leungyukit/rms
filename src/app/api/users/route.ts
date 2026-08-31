@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
-import { getCurrentUser, isGlobalAdmin, hashPassword, logAudit } from '@/lib/auth';
+import { getCurrentUser, isGlobalAdmin, hashPassword, logAudit, hasFunctionalAccess } from '@/lib/auth';
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  // 安全修复（2026-08-31）：原来只验「是否登录」，仅登录用户（login_only）
+  // 可拖走全量用户名单（含真实姓名/邮箱/角色/所属项目）。
+  if (!hasFunctionalAccess(user.roles)) {
+    return NextResponse.json({ error: '无功能权限' }, { status: 403 });
+  }
 
   const db = getAsyncDb();
   const rows = (await db.prepare(`

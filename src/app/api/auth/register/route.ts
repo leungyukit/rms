@@ -21,6 +21,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '用户名已存在' }, { status: 409 });
     }
 
+    // 安全修复（2026-08-31）：原实现「查不到 login_only 角色就静默跳过授权」，
+    // 而 roles 表里恰好没有这行数据 → 新用户落地为零角色 → 配合 isLoginOnly()
+    // 的 length===1 判定失效，反而拿到全部功能权限。现改为 fail-closed：
+    // 默认角色不存在就拒绝注册，绝不创建「无角色」用户。
+    const role = (await db.prepare("SELECT id FROM roles WHERE name = 'login_only'").get()) as any;
+    if (!role) {
+      console.error('[register] 默认角色 login_only 不存在，拒绝注册以避免创建零角色用户');
+      return NextResponse.json(
+        { error: '注册暂不可用：系统默认角色未配置，请联系管理员' },
+        { status: 503 }
+      );
+    }
+
     const hash = hashPassword(password);
     const result = (await db.prepare(
       'INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)'
@@ -28,11 +41,7 @@ export async function POST(req: NextRequest) {
 
     const userId = result.lastInsertRowid as number;
 
-    // Assign default role (login_only)
-    const role = (await db.prepare("SELECT id FROM roles WHERE name = 'login_only'").get()) as any;
-    if (role) {
-      (await db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(userId, role.id));
-    }
+    (await db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(userId, role.id));
 
     const token = signToken({ userId, username });
     await setAuthCookie(token);

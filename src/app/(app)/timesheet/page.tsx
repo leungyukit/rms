@@ -22,7 +22,12 @@ function getWeekStart(d: Date): Date {
   return x;
 }
 
-function fmt(d: Date): string { return d.toISOString().substring(0, 10); }
+// 修复（2026-08-31）：原用 toISOString().substring(0,10) —— GMT+8 的本地零点
+// 转 UTC 是前一天 16:00，直接吐前一天的日期，导致查询窗口整体左移一天
+// （周日工时永远查不出来，上周日的被算进本周）。现改用本地时间格式化。
+function fmt(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 const TODAY = new Date();
 

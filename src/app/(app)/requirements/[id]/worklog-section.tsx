@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { todayLocal } from '@/lib/date-local';
 
 interface WorkLog {
   id: number;
@@ -14,7 +15,7 @@ interface WorkLog {
 export default function WorklogSection({ reqId, currentUser, onUpdate }: { reqId: string; currentUser: any; onUpdate?: () => void }) {
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [total, setTotal] = useState(0);
-  const [ed, setEd] = useState<any>({ work_date: new Date().toISOString().substring(0, 10), hours: 1, description: '' });
+  const [ed, setEd] = useState<any>({ work_date: todayLocal(), hours: 1, description: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [loading, setLoading] = useState(false);

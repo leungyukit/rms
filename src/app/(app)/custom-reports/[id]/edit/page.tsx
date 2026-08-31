@@ -306,7 +306,16 @@ export default function EditReportPage({ params }: { params: Promise<{ id: strin
             <SortableContext items={widgets.map(w => w.id)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-8 gap-4">
                 {widgets.map(widget => (
-                  <div key={widget.id} className={`col-span-${widget.width} row-span-${widget.height}`}>
+                  // 修复（2026-08-31）：Tailwind v4 靠静态扫源码收类名，模板拼接的
+                  // `row-span-${n}` 不会被编译进 CSS（已在产物里验证：row-span-* 一个都没有），
+                  // 导致图表高度设置完全无效。改用 inline style 直接下 grid 属性。
+                  <div
+                    key={widget.id}
+                    style={{
+                      gridColumn: `span ${widget.width} / span ${widget.width}`,
+                      gridRow: `span ${widget.height} / span ${widget.height}`,
+                    }}
+                  >
                     <SortableWidget
                       widget={widget}
                       onDelete={deleteWidget}

@@ -15,11 +15,16 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ id: 
   const [editForm, setEditForm] = useState<any>({});
 
   useEffect(() => {
-    fetch(`/api/knowledge/${id}`).then(r => r.json()).then(data => {
-      setEntry(data);
-      setEditForm({ title: data.title, question: data.question, answer: data.answer, category: data.category, type: data.type, tags: (data.tags || []).join(', ') });
-      setLoading(false);
-    });
+    // 修复（2026-08-31）：原来无 r.ok 检查也无 catch，401/500 时 setLoading(false)
+    // 永远不执行 → 页面永久卡在「加载中...」，不报错也不跳登录。
+    fetch(`/api/knowledge/${id}`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(data => {
+        setEntry(data);
+        setEditForm({ title: data.title, question: data.question, answer: data.answer, category: data.category, type: data.type, tags: (data.tags || []).join(', ') });
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, [id]);
 
   const handleFeedback = async (isUseful: boolean) => {

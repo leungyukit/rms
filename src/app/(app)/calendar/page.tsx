@@ -12,7 +12,12 @@ const PRIORITY_DOT: Record<string, string> = { high: '🔴', medium: '🟡', low
 
 type ViewMode = 'week' | 'month' | 'day';
 
-function fmt(d: Date) { return d.toISOString().split('T')[0]; }
+// 修复（2026-08-31）：原用 toISOString().split('T')[0] —— GMT+8 下会把本地时间
+// 转成 UTC 后截日期，CST 00:00-08:00 期间会吐前一天 → 日历网格整体左移一天。
+// （比 timesheet 更隘：startOfWeek 没有 setHours(0,0,0,0)，bug 只在凌晨出现，白天看不出来。）
+function fmt(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function startOfWeek(d: Date) { const r = new Date(d); r.setDate(r.getDate() - ((r.getDay() + 6) % 7)); return r; }
 function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }

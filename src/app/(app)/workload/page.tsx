@@ -75,14 +75,17 @@ export default function WorkloadPage() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('/api/auth/status', { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => { if (data.user?.id) setCurrentUserId(data.user.id); })
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(data => {
+        const u = data?.user || data;
+        if (u?.id) setCurrentUserId(u.id);
+      })
       .catch(() => {});
   }, []);
 
   const displayMembers = members.filter(m => {
-    if (scopeFilter === 'my') return currentUserId ? m.user_id === currentUserId : true;
+    if (scopeFilter === 'my') return currentUserId ? m.user_id === currentUserId : false;
     if (scopeFilter === 'overloaded') return m.utilization >= 100;
     return true;
   });

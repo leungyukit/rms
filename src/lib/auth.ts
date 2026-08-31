@@ -226,13 +226,24 @@ export function isGlobalAdmin(roles: string[]): boolean {
 }
 
 // 仅登录角色，默认没有任何菜单和功能权限
+//
+// 安全修复（2026-08-31）：原实现是 `roles.length === 1 && roles[0] === 'login_only'`，
+// 对「零角色」用户返回 false，于是 hasFunctionalAccess() 反而放行 —— 提权漏洞。
+// 触发链：roles 表里没有 login_only 这行数据 → register 的 `if (role)` 静默跳过
+// 授权 → 新用户落地为 roles=[] → length 是 0 不是 1 → 被判定「不是 login_only」
+// → 拿到除 global_admin 外的全部功能权限（实测可读 /api/users 全量名单）。
+// 现改为 fail-closed：无角色一律视同「仅登录」。
 export function isLoginOnly(roles: string[]): boolean {
-  return roles.length === 1 && roles[0] === 'login_only';
+  const list = Array.isArray(roles) ? roles.filter(Boolean) : [];
+  if (list.length === 0) return true;
+  return list.every((r) => r === 'login_only');
 }
 
 // 是否具有功能权限（除 global_admin 外，需拥有实际业务角色）
 export function hasFunctionalAccess(roles: string[]): boolean {
-  return roles.includes('global_admin') || !isLoginOnly(roles);
+  const list = Array.isArray(roles) ? roles.filter(Boolean) : [];
+  if (list.includes('global_admin')) return true;
+  return !isLoginOnly(list);
 }
 
 // Access Token authentication

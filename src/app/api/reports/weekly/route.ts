@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, hasFunctionalAccess } from '@/lib/auth';
 import { ensureReportTables, collectWeeklyData, renderWeeklyHtml, isoWeek } from '@/lib/reports-migrations';
 import { getAsyncDb } from '@/lib/db';
 import path from 'path';
@@ -8,6 +8,8 @@ import fs from 'fs';
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  // 安全修复（2026-08-31）：补功能权限校验
+  if (!hasFunctionalAccess(user.roles)) return NextResponse.json({ error: '无功能权限' }, { status: 403 });
   ensureReportTables();
 
   const now = new Date();

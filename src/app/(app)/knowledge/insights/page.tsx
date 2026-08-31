@@ -8,10 +8,14 @@ export default function KnowledgeInsightsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/knowledge/stats', { credentials: 'include' }).then(r => r.json()).then(data => {
-      setStats(data);
-      setLoading(false);
-    });
+    // 修复（2026-08-31）：补 r.ok 检查 + catch，避免 401 时永久「加载中...」
+    fetch('/api/knowledge/stats', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(data => {
+        setStats(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="p-20 text-center text-gray-400">加载中...</div>;

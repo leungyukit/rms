@@ -1,4 +1,4 @@
-import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
+import { getCurrentUser, isGlobalAdmin, hasFunctionalAccess } from '@/lib/auth';
 import { getAsyncDb } from '@/lib/db';
 import { ensureCustomReportTables } from '@/lib/custom-report-migrations';
 
@@ -7,6 +7,10 @@ export async function GET() {
     const user = await getCurrentUser();
     if (!user) {
       return Response.json({ error: '未登录' }, { status: 401 });
+    }
+    // 安全修复（2026-08-31）：补功能权限校验，仅登录用户不应看到数据源列表
+    if (!hasFunctionalAccess(user.roles)) {
+      return Response.json({ error: '无功能权限' }, { status: 403 });
     }
 
     ensureCustomReportTables();

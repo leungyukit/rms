@@ -245,12 +245,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setSearching(true);
     const timer = setTimeout(() => {
       fetch(`/api/search?keyword=${encodeURIComponent(searchKeyword)}`)
-        .then(r => r.json())
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
         .then(data => {
-          setSearchResults(data);
+          // 修复（2026-08-31）：/api/search 返回的是扁平的 { results: [{type,...}] }，
+          // 原代码直接把整个响应当成 { requirements, projects, users } 用，
+          // 这三个字段根本不存在 → 搜索永远显示「未找到结果」。
+          // 现按 type 分组。注意：后端只搜 requirement / knowledge / project，不搜用户。
+          const list: any[] = Array.isArray(data?.results) ? data.results : [];
+          setSearchResults({
+            requirements: list.filter(r => r.type === 'requirement'),
+            projects: list.filter(r => r.type === 'project'),
+            knowledge: list.filter(r => r.type === 'knowledge'),
+          });
           setSearching(false);
         })
-        .catch(() => setSearching(false));
+        .catch(() => {
+          setSearchResults({ requirements: [], projects: [], knowledge: [] });
+          setSearching(false);
+        });
     }, 300);
     return () => clearTimeout(timer);
   }, [searchKeyword]);
@@ -613,18 +625,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     ))}
                   </div>
                 )}
-                {searchResults.users?.length > 0 && (
+                {searchResults.knowledge?.length > 0 && (
                   <div>
-                    <div className="px-4 py-2 text-xs uppercase bg-[#FF6B6B] text-white font-extrabold tracking-wider border-b-2 border-black">用户</div>
-                    {searchResults.users.slice(0, 3).map((u: any) => (
-                      <div key={u.id} className="px-4 py-2 cursor-pointer border-b-2 border-[var(--border-c)] hover:bg-[var(--primary-c)]" onClick={() => { router.push(`/admin/users`); setSearchOpen(false); }}>
-                        <div className="text-sm font-bold text-[var(--foreground)]">{u.display_name}</div>
-                        <div className="text-xs font-semibold text-[var(--muted-fg)]">@{u.username}</div>
+                    <div className="px-4 py-2 text-xs uppercase bg-[#FF6B6B] text-white font-extrabold tracking-wider border-b-2 border-black">知识</div>
+                    {searchResults.knowledge.slice(0, 3).map((k: any) => (
+                      <div key={k.id} className="px-4 py-2 cursor-pointer border-b-2 border-[var(--border-c)] hover:bg-[var(--primary-c)]" onClick={() => { router.push(`/knowledge/${k.id}`); setSearchOpen(false); }}>
+                        <div className="text-sm font-bold text-[var(--foreground)]">{k.title}</div>
+                        <div className="text-xs font-semibold text-[var(--muted-fg)]">{k.category || '知识库'}</div>
                       </div>
                     ))}
                   </div>
                 )}
-                {!searchResults.requirements?.length && !searchResults.projects?.length && !searchResults.users?.length && (
+                {!searchResults.requirements?.length && !searchResults.projects?.length && !searchResults.knowledge?.length && (
                   <div className="py-4 text-center font-bold text-[var(--muted-fg)]">未找到结果</div>
                 )}
               </>
@@ -632,7 +644,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {!searchResults && searchKeyword && !searching && (
               <div className="py-4 text-center font-bold text-[var(--muted-fg)]">输入关键词搜索</div>
             )}
-            {!searchKeyword && <div className="py-4 text-center font-bold text-[var(--muted-fg)]">输入关键词搜索需求、项目、用户</div>}
+            {!searchKeyword && <div className="py-4 text-center font-bold text-[var(--muted-fg)]">输入关键词搜索需求、项目、知识</div>}
           </div>
         </div>
       )}

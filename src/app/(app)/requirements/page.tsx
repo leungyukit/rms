@@ -112,7 +112,7 @@ export default function RequirementsPage() {
     } catch (e) {
 /* ignore */ }
     setLoading(false);
-  }, [page, search, filters]);
+  }, [page, search, filters, myOnly, currentUserId]);
 
   useEffect(() => { load(); }, [load]);
 
