@@ -52,3 +52,9 @@ deploy/openclaw/**/openclaw.json
 src/app/globals.css.bak*
 *.bak.*
 .logo-backup/
+
+# DB 密码（600，绝不进 git）
+.db_password
+
+# 本地删除暂存（不进 git）
+.trash-*/

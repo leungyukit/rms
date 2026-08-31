@@ -587,7 +587,10 @@ export MYSQL_HOST=localhost
 export MYSQL_PORT=3306
 export MYSQL_DATABASE=rms
 export MYSQL_USER=rms
-export MYSQL_PASSWORD=***
+# 密码不写在本文件（start.sh 在 git 里）：从 600 权限的 .db_password 读
+DB_PASSWORD_FILE="${DB_PASSWORD_FILE:-/home/itd3/www/rms/.db_password}"
+MYSQL_PASSWORD="$(tr -d '\r\n' < "$DB_PASSWORD_FILE")"
+export MYSQL_PASSWORD
 export PORT=3800
 export HOSTNAME=0.0.0.0
 export NODE_ENV=production

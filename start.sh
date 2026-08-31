@@ -17,7 +17,26 @@ export MYSQL_HOST=localhost
 export MYSQL_PORT=3306
 export MYSQL_DATABASE=rms
 export MYSQL_USER=rms
-export MYSQL_PASSWORD=***
+
+# DB 密码（2026-08-31 轮换）
+# 原先这里把密码字面量直接写在本文件里 —— 且那串东西看着像占位符，
+# 实际就是真密码（实测能连库）。一个 3 字符的生产库密码，
+# 而且本文件在 git 里，仓库又是公开的 —— 等于密码公开。
+# 现改为从 600 权限的外部文件读（同 JWT_SECRET 的做法），文件已进 .gitignore。
+# 首次部署/轮换：
+#   openssl rand -hex 24 > /home/itd3/www/rms/.db_password && chmod 600 同文件
+#   然后：ALTER USER USER() IDENTIFIED BY '<新密码>';（SQL 走 stdin，不进命令行）
+DB_PASSWORD_FILE="${DB_PASSWORD_FILE:-/home/itd3/www/rms/.db_password}"
+if [ -f "$DB_PASSWORD_FILE" ]; then
+  MYSQL_PASSWORD="$(tr -d '\r\n' < "$DB_PASSWORD_FILE")"
+fi
+if [ -z "$MYSQL_PASSWORD" ]; then
+  echo "[FATAL] MYSQL_PASSWORD 未配置。执行：" >&2
+  echo "  openssl rand -hex 24 > $DB_PASSWORD_FILE && chmod 600 $DB_PASSWORD_FILE" >&2
+  echo "  并同步执行：ALTER USER USER() IDENTIFIED BY '<新密码>';" >&2
+  exit 1
+fi
+export MYSQL_PASSWORD
 
 # JWT 签名密钥（2026-08-03 新增）
 # 应用层已强校验：生产模式下 JWT_SECRET 未设或 <32 位 → 直接拒绝启动。
