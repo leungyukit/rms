@@ -6,7 +6,10 @@
     "dev": "next dev --turbopack -p 3800",
     "build": "next build",
     "start": "next start -p 3800",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "postbuild": "bash scripts/postbuild.sh",
+    "healthcheck": "bash scripts/healthcheck.sh",
+    "deploy": "npm run build && sudo systemctl restart rms.service && sleep 6 && npm run healthcheck"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

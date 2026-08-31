@@ -1,21 +1,14 @@
 #!/bin/bash
 cd /home/itd3/www/rms/.next/standalone/www/rms
 
-# Ensure public directory exists and is linked
-if [ ! -d "public" ]; then
-  mkdir -p public
-fi
-
-# Sync static files from build
-rsync -au --delete /home/itd3/www/rms/.next/static/ .next/static/ 2>/dev/null || true
-
-# Sync uploads from main project (one-way, only newer files)
-rsync -au /home/itd3/www/rms/public/uploads/ public/uploads/ 2>/dev/null || true
-
-# Ensure bcryptjs is installed (Next.js standalone build may strip it)
-if [ ! -d "node_modules/bcryptjs" ]; then
-  echo "Installing bcryptjs..."
-  npm install bcryptjs@3.0.3 --omit=dev --no-save 2>/dev/null || true
+# 2026-08-31：原先这里用 rsync 单向同步 static/uploads，且「只在启动时跑一次」。
+# 后果：build 完不重启 = 静态资源永久错位 —— 8/28 那次全站样式崩了 3 天就是这么来的。
+# 现改为 scripts/postbuild.sh 建软链（挂在 npm postbuild，每次 build 自动重建），
+# 让运行期状态只有一份权威副本，从物理上消灭双份不一致。
+# 这里只做兜底：软链缺失说明有人绕过了 postbuild，补跑一次。
+if [ ! -e ".next/static" ] || [ ! -e "data" ] || [ ! -e "public/uploads" ] || [ ! -d "node_modules/bcryptjs" ]; then
+  echo "[start] standalone 软链/依赖缺失，补跑 postbuild..."
+  bash /home/itd3/www/rms/scripts/postbuild.sh || echo "[start] ⚠️ postbuild 失败，静态资源可能不可用" >&2
 fi
 
 # MySQL configuration

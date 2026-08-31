@@ -117,7 +117,37 @@ function getSqliteDb(): Database.Database {
  *   2. SQL 通过 stdin 传入，不再作为命令行参数 → SQL 内容与命令行彻底隔离；
  *   3. 密码走 MYSQL_PWD 环境变量 → 不出现在进程命令行（ps 可见）里。
  */
-function mysqlExec(sql: string): string {
+/**
+ * MySQL 错误码里「幂等 DDL 的正常噪音」白名单。
+ *
+ * 24 个 migration 文件的模式都是「无条件 ALTER/CREATE INDEX，已存在就忽略」，
+ * 这类报错是预期行为，不能当故障。除此以外的错误一律上抛。
+ */
+const IDEMPOTENT_DDL_ERRNOS = new Set([
+  1050, // Table already exists
+  1060, // Duplicate column name
+  1061, // Duplicate key name
+  1091, // Can't DROP ...; check that column/key exists
+  1826, // Duplicate foreign key constraint name
+]);
+
+function parseMysqlErrno(msg: string): number | null {
+  const m = /ERROR (\d{3,4})/.exec(msg);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+export class DbError extends Error {
+  errno: number | null;
+  sql: string;
+  constructor(message: string, errno: number | null, sql: string) {
+    super(message);
+    this.name = 'DbError';
+    this.errno = errno;
+    this.sql = sql;
+  }
+}
+
+function runMysql(sql: string): { ok: true; out: string } | { ok: false; msg: string; errno: number | null } {
   try {
     const out = execFileSync(
       'mysql',
@@ -141,19 +171,60 @@ function mysqlExec(sql: string): string {
         stdio: ['pipe', 'pipe', 'pipe'],
       }
     );
-    return (out || '').trim();
+    return { ok: true, out: (out || '').trim() };
   } catch (e: any) {
-    // 原实现静默返回 ''，导致上层完全看不到 DB 错误。至少留一条日志。
-    // eslint-disable-next-line no-console
-    console.error('[db.mysqlExec] failed:', e?.stderr?.toString?.() || e?.message || String(e));
-    return '';
+    const msg = e?.stderr?.toString?.() || e?.message || String(e);
+    return { ok: false, msg, errno: parseMysqlErrno(msg) };
   }
 }
 
+/**
+ * 执行 SQL，失败即抛错。
+ *
+ * 2026-08-31：原实现失败时 `return ''`，于是上层 `get()` 返回 undefined、
+ * `all()` 返回 []，**「查询失败」和「查询结果为空」完全无法区分**。
+ * 这是本项目大量静默故障的总根源 —— 实际造成过：
+ *   - SLA/估时配置因 MySQL 保留字 `key` 未转义而全部写入失败，页面却正常显示
+ *     （静默 fallback 到硬编码默认值），活了很久没人发现
+ *   - `Table 'rms.reports' doesn't exist` 期间页面只是「没有数据」，不报错
+ * 现在改为上抛，让路由层 error boundary 返回 500 —— 故障必须可见。
+ */
+function mysqlExec(sql: string): string {
+  const r = runMysql(sql);
+  if (r.ok) return r.out;
+  // eslint-disable-next-line no-console
+  console.error('[db.mysqlExec] failed:', r.msg, '| sql:', sql.slice(0, 200));
+  throw new DbError(`MySQL 执行失败: ${r.msg.trim()}`, r.errno, sql);
+}
+
+/**
+ * 尽力而为版本：失败返回 null，不抛错。
+ * 只用于「失败也能降级继续」的旁路（如列名推断的 DESCRIBE 探测）。
+ */
+function mysqlExecSafe(sql: string): string | null {
+  const r = runMysql(sql);
+  if (r.ok) return r.out;
+  // eslint-disable-next-line no-console
+  console.warn('[db.mysqlExecSafe] 忽略失败:', r.msg.trim(), '| sql:', sql.slice(0, 120));
+  return null;
+}
+
+/**
+ * 多语句执行，供 DDL（建表/加列/建索引）使用。
+ * 幂等 DDL 的「已存在」类报错按预期忽略，其余一律上抛。
+ */
 function mysqlExecMulti(sql: string): void {
   const stmts = normalizeMysqlSql(sql).split(';').map(s => s.trim()).filter(Boolean);
   for (const stmt of stmts) {
-    mysqlExec(stmt);
+    const r = runMysql(stmt);
+    if (r.ok) continue;
+    if (r.errno !== null && IDEMPOTENT_DDL_ERRNOS.has(r.errno)) {
+      // 幂等 DDL 的正常噪音，不算故障
+      continue;
+    }
+    // eslint-disable-next-line no-console
+    console.error('[db.mysqlExecMulti] failed:', r.msg.trim(), '| sql:', stmt.slice(0, 200));
+    throw new DbError(`MySQL DDL 执行失败: ${r.msg.trim()}`, r.errno, stmt);
   }
 }
 
@@ -482,7 +553,7 @@ class MySqlPreparedStatement {
     if (mainFrom) {
       const tableMatch = mainFrom.match(/^(\w+)(?:\s+(?:AS\s+)?(\w+))?/i);
       if (tableMatch) {
-        const descOutput = mysqlExec(`DESCRIBE ${tableMatch[1]}`);
+        const descOutput = mysqlExecSafe(`DESCRIBE ${tableMatch[1]}`);
         if (descOutput) {
           this.columnNames = descOutput.split('\n').map(line => line.split('\t')[0]).filter(Boolean);
         }
@@ -539,18 +610,20 @@ class MySqlDatabase {
   }
   exec(sql: string): void { mysqlExecMulti(sql); }
   pragma(_: string): void {}
-  transaction(fn: (...args: any[]) => any): (...args: any[]) => any {
-    return (...args: any[]) => {
-      mysqlExec('START TRANSACTION');
-      try {
-        const result = fn(...args);
-        mysqlExec('COMMIT');
-        return result;
-      } catch (e) {
-        mysqlExec('ROLLBACK');
-        throw e;
-      }
-    };
+  transaction(_fn: (...args: any[]) => any): (...args: any[]) => any {
+    // 2026-08-31：同步 MySQL 路径下事务保护是**完全无效**的 —— mysqlExec() 每次调用都
+    // execFileSync fork 一个新的 mysql CLI 进程，每个进程是独立连接：
+    //   START TRANSACTION 开在进程 A 的连接上（该连接随进程退出立即关闭，事务隐式回滚）
+    //   → 业务 SQL 各自在新连接上自动提交
+    //   → COMMIT/ROLLBACK 作用在第四个空连接上
+    // 原实现照样返回一个「看起来像事务」的函数，静默给出虚假的原子性保证。
+    // 已知受害者：sla-scanner.ts 的 persistScan()（写 sla_warnings + notifications 两表），
+    // 中途失败会留下脏数据。已改走 getAsyncDb()。
+    // 这里改为直接抛错，防止再有人误用。
+    throw new Error(
+      '同步 MySQL 事务不可用：每条语句独立连接，事务无法跨语句生效。' +
+      '请改用 getAsyncDb().transaction()（用 AsyncLocalStorage 绑定同一连接）。'
+    );
   }
 }
 

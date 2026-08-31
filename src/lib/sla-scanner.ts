@@ -8,7 +8,7 @@
  *   - 去重：同 req + level 在过去 7 天若有未确认记录则跳过
  *   - 边界：planned_end 为空 / 状态已完成 / 分母为 0 / handler_id 为空 全部兜底
  */
-import { getDb, isMysqlEnabled } from './db';
+import { getDb, getAsyncDb, isMysqlEnabled } from './db';
 import { ensureSlaTables, getSlaConfig } from './sla-migrations';
 
 export type SlaStatus = 'ok' | 'approaching' | 'overdue' | 'escalated' | 'none';
@@ -141,31 +141,40 @@ export function scanAllWarnings(): ScanResult[] {
 
 /**
  * 持久化扫描结果（含 7 天去重 + 写通知）
+ *
+ * 2026-08-31 改为 async：原实现用同步 getDb().transaction()，而同步 MySQL 路径
+ * 每条语句都 fork 一个新 mysql CLI 进程 = 独立连接。START TRANSACTION 开在进程 A
+ * （随进程退出隐式回滚）、业务 SQL 在进程 B/C 各自自动提交、COMMIT 打在进程 D，
+ * 事务保护完全无效 —— 扫描中途失败会留下「发了通知但预警记录不完整」的脏数据，
+ * 而 7 天去重又依赖 sla_warnings 表，脏数据会污染后续判断。
+ * （同款 bug 已于 2026-08-03 在异步路径修过，同步路径被漏掉。）
+ * 现改走 getAsyncDb()，它用 AsyncLocalStorage 把整个事务绑在同一连接上。
+ *
  * @param dryRun true=不写库只返回
  */
-export function persistScan(dryRun: boolean = false): {
+export async function persistScan(dryRun: boolean = false): Promise<{
   scanned: number;
   created: number;
   skipped_dedup: number;
   notifications: number;
   items: ScanResult[];
-} {
+}> {
   const items = scanAllWarnings();
   if (dryRun) {
     return { scanned: items.length, created: 0, skipped_dedup: 0, notifications: 0, items };
   }
 
   ensureSlaTables();
-  const db = getDb();
+  const db = getAsyncDb();
   let created = 0;
   let skipped = 0;
   let notifications = 0;
 
-  const insertWarning = db.prepare(`
+  const insertWarningSql = `
     INSERT INTO sla_warnings
       (requirement_id, warning_type, warning_level, planned_end, days_diff, notified_user_ids)
     VALUES (?, ?, ?, ?, ?, ?)
-  `);
+  `;
   // 去重：同 req + level 在过去 7 天是否有未确认记录
   // MySQL 用 DATE_SUB(NOW(), INTERVAL 7 DAY)，SQLite 用 datetime('now', '-7 days')
   const isMysql = isMysqlEnabled();
@@ -176,29 +185,28 @@ export function persistScan(dryRun: boolean = false): {
     : `SELECT id FROM sla_warnings
        WHERE requirement_id = ? AND warning_level = ? AND created_at >= datetime('now', '-7 days')
        LIMIT 1`;
-  const existsRecent = db.prepare(dedupSql);
-  const insertNotif = db.prepare(`
+  const insertNotifSql = `
     INSERT INTO notifications (user_id, type, title, content, link, is_read)
     VALUES (?, 'sla_warning', ?, ?, ?, 0)
-  `);
+  `;
 
-  const tx = db.transaction(() => {
+  const tx = await db.transaction(async () => {
     for (const it of items) {
       // 7 天去重
-      const dup = existsRecent.get(it.requirement_id, it.warning_level);
+      const dup = await db.prepare(dedupSql).get(it.requirement_id, it.warning_level);
       if (dup) {
         skipped++;
         continue;
       }
 
-      const warningId = insertWarning.run(
+      await db.prepare(insertWarningSql).run(
         it.requirement_id,
         it.warning_type,
         it.warning_level,
         it.planned_end,
         it.days_diff,
         JSON.stringify(it.notified_user_ids)
-      ).lastInsertRowid as number;
+      );
 
       created++;
 
@@ -209,13 +217,13 @@ export function persistScan(dryRun: boolean = false): {
       const content = `${emoji} ${titleText}（${daysAbs} 天）- ${it.title}`;
       const link = `/requirements/${it.requirement_id}`;
       for (const uid of it.notified_user_ids) {
-        insertNotif.run(uid, content, content, link);
+        await db.prepare(insertNotifSql).run(uid, content, content, link);
         notifications++;
       }
     }
   });
 
-  tx();
+  await tx();
 
   return { scanned: items.length, created, skipped_dedup: skipped, notifications, items };
 }

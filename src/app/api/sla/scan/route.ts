@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (!isGlobalAdmin(user.roles)) return NextResponse.json({ error: '需要管理员权限' }, { status: 403 });
 
   const dryRun = req.nextUrl.searchParams.get('dry_run') === '1';
-  const result = persistScan(dryRun);
+  const result = await persistScan(dryRun);
   return NextResponse.json({ ok: true, dry_run: dryRun, ...result });
 }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   if (!isGlobalAdmin(user.roles)) return NextResponse.json({ error: '需要管理员权限' }, { status: 403 });
 
-  const result = persistScan(false);
+  const result = await persistScan(false);
   logAudit(user.id, user.username, 'sla_scan', `SLA 扫描：命中 ${result.scanned}，新建 ${result.created}，去重跳过 ${result.skipped_dedup}`);
   return NextResponse.json({ ok: true, dry_run: false, ...result });
 }

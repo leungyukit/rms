@@ -51,3 +51,4 @@ deploy/openclaw/**/openclaw.json
 # CSS 改造过程备份
 src/app/globals.css.bak*
 *.bak.*
+.logo-backup/
