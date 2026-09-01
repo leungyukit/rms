@@ -4,6 +4,7 @@ import { getCurrentUser, hasFunctionalAccess } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 import { buildKnowledgeReadFilter, canWriteCategory } from '@/lib/knowledge-acl';
 import { syncKnowledgeTags, entryIdsByTag, readKnowledgeTags } from '@/lib/knowledge-tags';
+import { resolveCaptureTask } from '@/lib/knowledge-capture';
 
 // GET: list/search knowledge entries
 export async function GET(req: NextRequest) {
@@ -132,6 +133,17 @@ export async function POST(req: NextRequest) {
   // 因为老数据全在 JSON 里且前端多处直接读 item.tags。
   const newId = Number(result.lastInsertRowid);
   const savedTags = await syncKnowledgeTags(db as any, newId, tags);
+
+  // 闭环（P6）：这条知识是从某需求沉淀出来的，就把对应待办关掉。
+  // 否则待办列表永远清不空，下一步就是没人看。
+  if (source_requirement_id) {
+    await resolveCaptureTask({
+      db,
+      requirementId: parseInt(String(source_requirement_id)),
+      knowledgeEntryId: newId,
+      resolvedBy: user.id,
+    });
+  }
 
   return NextResponse.json({ success: true, id: newId, tags: savedTags });
 }

@@ -8,6 +8,7 @@ import { ensureChecklistTables, getChecklistAggregate } from '@/lib/checklist-mi
 import { ensurePerfIndexes, syncPriorityRank } from '@/lib/perf-indexes-migrations';
 import { ensurePriorityFrameworkFields } from '@/lib/requirement-priority-migrations';
 import { spToLabel } from '@/lib/sp-badge';
+import { checkCaptureGate, upsertCaptureTask } from '@/lib/knowledge-capture';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -135,6 +136,29 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
+  // 知识沉淀门禁（P6）—— 排在 AC 门禁之后：AC 是硬指标，先过 AC 再谈沉淀。
+  // 必须在 UPDATE 落库**之前**判定，否则 block 模式拦不住。
+  //
+  // 沉淀字段取「body 优先，未传则用库里现值」：
+  // 用户常常是「这次同时填 solution + 改 status」，只看库里旧值会误拦。
+  const captureDecision = await checkCaptureGate({
+    db,
+    requirementId: existing.id,
+    prevStatus: existing.status,
+    nextStatus: body.status,
+    solution: body.solution !== undefined ? body.solution : existing.solution,
+    lessons_learned: body.lessons_learned !== undefined ? body.lessons_learned : existing.lessons_learned,
+    root_cause: body.root_cause !== undefined ? body.root_cause : existing.root_cause,
+    waiverReason: body.capture_waiver_reason,
+  });
+
+  if (!captureDecision.allow) {
+    return NextResponse.json({
+      error: captureDecision.message,
+      capture_gate: 'block',
+    }, { status: 400 });
+  }
+
   const updates: string[] = ['updated_at = CURRENT_TIMESTAMP'];
   const values: any[] = [];
 
@@ -229,6 +253,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       const today = new Date().toISOString().split('T')[0];
       (await db.prepare('UPDATE requirements SET actual_end = ? WHERE id = ? AND actual_end IS NULL').run(today, id));
       logAudit(user.id, user.username, 'auto_actual_end', `需求 ${id} 完成时自动写入实际完成日期 ${today}`);
+    }
+
+    // 知识沉淀待办（P6）：门禁判定在 UPDATE 之前做，建待办放在之后 ——
+    // 待办建失败不该让需求状态改不了，主次要分清。
+    if (captureDecision.needTask) {
+      try {
+        await upsertCaptureTask({
+          db,
+          requirementId: existing.id,
+          triggerStatus: body.status,
+          createdBy: user.id,
+          waiverReason: body.capture_waiver_reason,
+        });
+        logAudit(user.id, user.username, 'knowledge_capture_task',
+          `需求 ${id} 关闭时知识沉淀不足，已建沉淀待办${body.capture_waiver_reason ? '（附豁免理由）' : ''}`);
+      } catch (e) {
+        console.error('Create knowledge capture task failed:', e);
+      }
     }
   }
 

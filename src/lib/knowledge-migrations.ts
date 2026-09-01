@@ -407,6 +407,93 @@ function createVersionTables() {
   }
 }
 
+/**
+ * 需求关闭 → 知识沉淀闭环（P6）
+ *
+ * 实测现状：33 条需求里只有 6 条填了 solution，
+ * lessons_learned 与 root_cause **全是 0** —— 沉淀字段形同虚设。
+ * 光有字段没有闭环，需求做完就没了。
+ *
+ * requirement_id 上加 UNIQUE：一个需求只保留一个沉淀任务。
+ * 否则反复切状态（completed → in_progress → completed）会刷出一堆重复任务。
+ */
+function createCaptureTables() {
+  const db = getDb();
+  const isMysql = isMysqlEnabled();
+
+  if (isMysql) {
+    if (!mysqlTableExists('knowledge_capture_tasks')) {
+      db.exec(`
+        CREATE TABLE knowledge_capture_tasks (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          requirement_id INT NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending',
+          trigger_status VARCHAR(30),
+          knowledge_entry_id INT NULL,
+          waiver_reason VARCHAR(500),
+          created_by INT NULL,
+          resolved_by INT NULL,
+          resolved_at DATETIME NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_kct_req (requirement_id),
+          KEY idx_kct_status (status)
+        )
+      `);
+    }
+  } else {
+    if (!sqliteTableExists('knowledge_capture_tasks')) {
+      db.exec(`
+        CREATE TABLE knowledge_capture_tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          requirement_id INTEGER NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'pending',
+          trigger_status TEXT,
+          knowledge_entry_id INTEGER,
+          waiver_reason TEXT,
+          created_by INTEGER,
+          resolved_by INTEGER,
+          resolved_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_kct_status ON knowledge_capture_tasks(status);
+      `);
+    }
+  }
+
+  // 默认 warn：上线先提醒不拦人。
+  // 直接上 block 会把存量需求全卡住，结果一定是被整个关掉。
+  const configs: Array<[string, string, string, string, string, number]> = [
+    [
+      'knowledge_capture_gate',
+      'warn',
+      '知识沉淀门禁',
+      '需求进入完成/验收/关闭时是否要求沉淀知识。off=关闭，warn=提醒但放行，block=必须沉淀或填豁免理由',
+      'select:off|关闭,warn|提醒（默认）,block|强制',
+      401,
+    ],
+    [
+      'knowledge_capture_min_chars',
+      '30',
+      '沉淀最小字数',
+      '方案/经验/根因合计至少多少字才算有效沉淀（防止填一个空格蒙过去）',
+      'number',
+      402,
+    ],
+  ];
+
+  const insertConfig = isMysql
+    ? `INSERT INTO system_config (\`key\`, \`value\`, \`label\`, \`description\`, \`category\`, \`type\`, \`sort_order\`)
+       VALUES (?, ?, ?, ?, 'knowledge', ?, ?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), sort_order = VALUES(sort_order)`
+    : `INSERT OR IGNORE INTO system_config (key, value, label, description, category, type, sort_order)
+       VALUES (?, ?, ?, ?, 'knowledge', ?, ?)`;
+
+  // 注意：ON DUPLICATE 里有意不更新 value —— 否则每次迁移都把用户调过的门禁模式重置回 warn
+  for (const [key, value, label, description, type, sortOrder] of configs) {
+    db.prepare(insertConfig).run(key, value, label, description, type, sortOrder);
+  }
+}
+
 // ---------- 入口 ----------
 
 export function ensureKnowledgeTables() {
@@ -420,6 +507,7 @@ export function ensureKnowledgeTables() {
   createCategoryTables();
   createTagTables();
   createVersionTables();
+  createCaptureTables();
 
   ensured = true;
 }
@@ -456,7 +544,7 @@ const REQUIRED_COLUMNS: Array<[string, string]> = [
   ['knowledge_entries', 'category_id'],
 ];
 
-const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl', 'knowledge_tags', 'knowledge_versions'];
+const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl', 'knowledge_tags', 'knowledge_versions', 'knowledge_capture_tasks'];
 
 /** 逐项核对 P0 要求的 schema 是否真的落地了 */
 export function verifyKnowledgeSchema(): { ok: boolean; checks: SchemaCheck[] } {

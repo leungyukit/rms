@@ -153,6 +153,33 @@ const TABLES = [
       UNIQUE KEY uk_kv (entry_id, version_no),
       KEY idx_kv_entry (entry_id, version_no)
     )`],
+  ['knowledge_capture_tasks', `
+    CREATE TABLE knowledge_capture_tasks (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      requirement_id INT NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      trigger_status VARCHAR(30),
+      knowledge_entry_id INT NULL,
+      waiver_reason VARCHAR(500),
+      created_by INT NULL,
+      resolved_by INT NULL,
+      resolved_at DATETIME NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_kct_req (requirement_id),
+      KEY idx_kct_status (status)
+    )`],
+];
+
+// system_config 播种（P6）。表 DDL 不够 —— 门禁靠配置驱动，
+// 配置没落库门禁就读不到，只能靠代码里的兜底默认值。
+// 有意不更新 value：迁移复跑不该把用户调过的门禁模式重置回 warn。
+const CONFIGS = [
+  ['knowledge_capture_gate', 'warn', '知识沉淀门禁',
+    '需求进入完成/验收/关闭时是否要求沉淀知识。off=关闭，warn=提醒但放行，block=必须沉淀或填豁免理由',
+    'select:off|关闭,warn|提醒（默认）,block|强制', 401],
+  ['knowledge_capture_min_chars', '30', '沉淀最小字数',
+    '方案/经验/根因合计至少多少字才算有效沉淀（防止填一个空格蒙过去）',
+    'number', 402],
 ];
 
 const conn = await mysql.createConnection(cfg);
@@ -223,6 +250,18 @@ try {
     await run(`INDEX ${index} ON ${table}(${cols})`, `CREATE INDEX ${index} ON ${table}(${cols})`);
   }
 
+  // 4. 播种配置项
+  for (const [key, value, label, description, type, sortOrder] of CONFIGS) {
+    const [rows] = await conn.execute('SELECT COUNT(*) AS cnt FROM system_config WHERE `key` = ?', [key]);
+    if (Number(rows[0].cnt) > 0) { skipped.push(`config ${key} 已存在`); continue; }
+    if (DRY_RUN) { applied.push(`[dry-run] CONFIG ${key}`); continue; }
+    await conn.execute(
+      'INSERT INTO system_config (`key`, `value`, `label`, `description`, `category`, `type`, `sort_order`) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [key, value, label, description, 'knowledge', type, sortOrder]
+    );
+    applied.push(`CONFIG ${key} = ${value}`);
+  }
+
   console.log(`\n=== 已执行 (${applied.length}) ===`);
   applied.forEach(a => console.log('  ✓', a));
   console.log(`\n=== 跳过 (${skipped.length}) ===`);
@@ -242,6 +281,11 @@ try {
   // 错列名不该存在
   for (const [table, column] of [['knowledge_feedback', 'knowledge_id']]) {
     if (await hasColumn(table, column)) { bad++; console.log('  ✗ 废弃列仍在', `${table}.${column}`); }
+  }
+  // 配置项必须真的落库，否则门禁读不到配置（本次实测踩到：表建了、配置没播）
+  for (const [key] of CONFIGS) {
+    const [rows] = await conn.execute('SELECT COUNT(*) AS cnt FROM system_config WHERE `key` = ?', [key]);
+    if (Number(rows[0].cnt) === 0) { bad++; console.log('  ✗ 缺失配置', key); }
   }
   console.log(bad === 0 ? '  ✅ 全部通过' : `  ❌ ${bad} 项未通过`);
   process.exitCode = bad === 0 ? 0 : 1;
