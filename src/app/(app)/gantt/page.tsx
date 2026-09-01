@@ -4,14 +4,30 @@ import { getAsyncDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  received_not_evaluated: { bg: '#F3F4F6', text: '#6B7280' },
-  evaluated_not_scheduled: { bg: '#FEF3C7', text: '#B45309' },
-  scheduled:            { bg: '#DBEAFE', text: '#1D4ED8' },
-  in_progress:          { bg: '#EDE9FE', text: '#6D28D9' },
-  completed:            { bg: '#D1FAE5', text: '#065F46' },
-  verified:             { bg: '#CFFAFE', text: '#0E7490' },
-  closed:               { bg: '#E5E7EB', text: '#374151' },
+/**
+ * 甘特图状态配色：绿色饱和度梯度承载「推进程度」
+ *
+ * 原本是 7 个随机色相的浅色 pastel（浅灰/浅黄/浅蓝/浅紫/浅绿/浅青/浅灰），
+ * 两个问题：
+ *   1. 深色主题下 7 块浅色贴在 #1C1C1C 背景上 = 一排刺眼亮斑
+ *   2. 7 个色相只能区分「是哪个状态」，看不出「推进到哪了」——
+ *      而甘特图最该一眼看出的是「哪些正在跑」
+ *
+ * 现在改成：灰(没动) → 暗绿(排上了) → 品牌绿实心(正在干，最醒目) → 深绿(收了) → 灰绿(归档)
+ * 全部走 CSS 变量，深浅两套在 globals.css 里各自定义 —— 写死 hex 的话深色永远对不上。
+ */
+const STATUS_COLORS: Record<string, { bg: string; text: string; fg: string }> = {
+  received_not_evaluated:  { bg: 'var(--gantt-idle-bg)',   text: 'var(--gantt-idle-ac)',   fg: 'var(--gantt-idle-fg)' },
+  evaluated_not_scheduled: { bg: 'var(--gantt-queued-bg)', text: 'var(--gantt-queued-ac)', fg: 'var(--gantt-queued-fg)' },
+  scheduled:               { bg: 'var(--gantt-sched-bg)',  text: 'var(--gantt-sched-ac)',  fg: 'var(--gantt-sched-fg)' },
+  in_progress:             { bg: 'var(--gantt-active-bg)', text: 'var(--gantt-active-ac)', fg: 'var(--gantt-active-fg)' },
+  completed:               { bg: 'var(--gantt-done-bg)',   text: 'var(--gantt-done-ac)',   fg: 'var(--gantt-done-fg)' },
+  verified:                { bg: 'var(--gantt-done-bg)',   text: 'var(--gantt-done-ac)',   fg: 'var(--gantt-done-fg)' },
+  closed:                  { bg: 'var(--gantt-closed-bg)', text: 'var(--gantt-closed-ac)', fg: 'var(--gantt-closed-fg)' },
+};
+
+const STATUS_FALLBACK = {
+  bg: 'var(--gantt-idle-bg)', text: 'var(--gantt-idle-ac)', fg: 'var(--gantt-idle-fg)',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -24,7 +40,10 @@ const STATUS_LABELS: Record<string, string> = {
   closed: '已关闭',
 };
 
-const PRIORITY_COLORS: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#10B981' };
+// 优先级保留红/橙/绿做强对比标记（跟状态梯度区分开，不然全绿分不出轻重缓急）
+const PRIORITY_COLORS: Record<string, string> = {
+  high: 'var(--gantt-prio-high)', medium: 'var(--gantt-prio-mid)', low: 'var(--gantt-prio-low)',
+};
 
 // ── 日期工具 ──
 function parseDate(s: any): Date | null {
@@ -320,11 +339,11 @@ export default async function GanttPage(props: any) {
           {items.map(item => {
             const b = bar(item);
             if (!b) return null;
-            const sc = STATUS_COLORS[item.status] || { bg: '#F3F4F6', text: '#6B7280' };
+            const sc = STATUS_COLORS[item.status] || STATUS_FALLBACK;
             const pEnd = parseDate(item.planned_end);
             const isOverdue = !['completed', 'verified', 'closed'].includes(item.status)
                               && pEnd != null && pEnd < today;
-            const pc = PRIORITY_COLORS[item.priority] || '#9CA3AF';
+            const pc = PRIORITY_COLORS[item.priority] || 'var(--gantt-prio-none)';
             return (
               <div key={item.id} className={`gantt-row ${isOverdue ? 'gantt-row--overdue' : ''}`}>
                 <div className="gantt-label">
@@ -359,7 +378,7 @@ export default async function GanttPage(props: any) {
                   )}
                   {/* 进度条 */}
                   <div className="gantt-bar"
-                       style={{ ...b.style, background: sc.bg, borderLeft: b.cutLeft ? 'none' : `3px solid ${sc.text}` }}
+                       style={{ ...b.style, background: sc.bg, color: sc.fg, borderLeft: b.cutLeft ? 'none' : `3px solid ${sc.text}` }}
                        title={`#${item.id} ${item.title}\n${ymd(parseDate(item.planned_start)!)} ~ ${ymd(pEnd!)}\n${STATUS_LABELS[item.status] || item.status}`}>
                     {b.cutLeft && <span className="gantt-bar-text" style={{ flex: '0 0 auto', opacity: 0.6 }}>‹</span>}
                     <span className="gantt-bar-text">{item.title}</span>
@@ -411,19 +430,35 @@ export default async function GanttPage(props: any) {
           </div>
         )}
 
-        {/* 图例 */}
+        {/* 图例：按推进顺序排列，让「灰 → 绿」的梯度本身可读。
+            completed/verified 共用同一组绿色（都属于「收了」），所以图例合并成一条，
+            否则会出现两个一模一样的色块让人以为是 bug。 */}
         <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 text-xs text-gray-500">
-          {Object.entries(STATUS_COLORS).map(([k, v]) => (
-            <span key={k} className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded" style={{ background: v.bg, borderLeft: `2px solid ${v.text}` }} />
-              {STATUS_LABELS[k]}
-            </span>
-          ))}
-          <span className="flex items-center gap-1 text-gray-400">
-            <span className="w-0.5 h-3 bg-red-400 inline-block" /> 今日
+          {[
+            'received_not_evaluated',
+            'evaluated_not_scheduled',
+            'scheduled',
+            'in_progress',
+            'completed',
+            'closed',
+          ].map(k => {
+            const v = STATUS_COLORS[k];
+            const label = k === 'completed' ? '已完成 / 已验证' : STATUS_LABELS[k];
+            return (
+              <span key={k} className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded" style={{ background: v.bg, borderLeft: `2px solid ${v.text}` }} />
+                {label}
+              </span>
+            );
+          })}
+          <span className="flex items-center gap-1">
+            <span className="w-0.5 h-3 inline-block" style={{ background: 'var(--destructive)' }} /> 今日
           </span>
-          <span className="text-gray-400 ml-auto">
-            优先级 <span className="inline-block w-2 h-2 rounded-full bg-red-500 mx-0.5" />高 <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mx-0.5" />中 <span className="inline-block w-2 h-2 rounded-full bg-gray-500 mx-0.5" />低
+          <span className="ml-auto">
+            优先级
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-high)' }} />高
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-mid)' }} />中
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-low)' }} />低
           </span>
         </div>
       </div>
