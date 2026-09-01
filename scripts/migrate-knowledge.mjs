@@ -133,6 +133,26 @@ const TABLES = [
       PRIMARY KEY (entry_id, tag_id),
       KEY idx_kt_tag (tag_id)
     )`],
+  ['knowledge_versions', `
+    CREATE TABLE knowledge_versions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      entry_id INT NOT NULL,
+      version_no INT NOT NULL,
+      title VARCHAR(500),
+      question TEXT,
+      answer TEXT,
+      content TEXT,
+      category VARCHAR(100),
+      category_id INT NULL,
+      tags_snapshot TEXT,
+      type VARCHAR(20),
+      status VARCHAR(20),
+      change_summary VARCHAR(255),
+      changed_by INT NULL,
+      changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_kv (entry_id, version_no),
+      KEY idx_kv_entry (entry_id, version_no)
+    )`],
 ];
 
 const conn = await mysql.createConnection(cfg);

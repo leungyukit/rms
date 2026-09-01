@@ -341,6 +341,72 @@ function createTagTables() {
   }
 }
 
+/**
+ * 知识版本历史（P4）
+ *
+ * 改造前知识条目零版本历史：改错了回不去、谁改的也查不到。
+ *
+ * 与现有 requirement_versions 的差异：那张表的快照**只能手动 POST 触发**，
+ * 改需求时不会自动存版本 —— 等于指望人手动备份，很少人会做。
+ * 知识这边不照搬这个坑：PUT 时自动先快照后更新。
+ *
+ * tags_snapshot 存 JSON 字符串而不是引用 join 表：
+ * 历史版本要的是「当时长什么样」，跟随现在的标签关系变动就不叫快照了。
+ */
+function createVersionTables() {
+  const db = getDb();
+
+  if (isMysqlEnabled()) {
+    if (!mysqlTableExists('knowledge_versions')) {
+      db.exec(`
+        CREATE TABLE knowledge_versions (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          entry_id INT NOT NULL,
+          version_no INT NOT NULL,
+          title VARCHAR(500),
+          question TEXT,
+          answer TEXT,
+          content TEXT,
+          category VARCHAR(100),
+          category_id INT NULL,
+          tags_snapshot TEXT,
+          type VARCHAR(20),
+          status VARCHAR(20),
+          change_summary VARCHAR(255),
+          changed_by INT NULL,
+          changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_kv (entry_id, version_no),
+          KEY idx_kv_entry (entry_id, version_no)
+        )
+      `);
+    }
+  } else {
+    if (!sqliteTableExists('knowledge_versions')) {
+      db.exec(`
+        CREATE TABLE knowledge_versions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entry_id INTEGER NOT NULL,
+          version_no INTEGER NOT NULL,
+          title TEXT,
+          question TEXT,
+          answer TEXT,
+          content TEXT,
+          category TEXT,
+          category_id INTEGER,
+          tags_snapshot TEXT,
+          type TEXT,
+          status TEXT,
+          change_summary TEXT,
+          changed_by INTEGER,
+          changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(entry_id, version_no)
+        );
+        CREATE INDEX IF NOT EXISTS idx_kv_entry ON knowledge_versions(entry_id, version_no);
+      `);
+    }
+  }
+}
+
 // ---------- 入口 ----------
 
 export function ensureKnowledgeTables() {
@@ -353,6 +419,7 @@ export function ensureKnowledgeTables() {
   fixAiReviewColumns();
   createCategoryTables();
   createTagTables();
+  createVersionTables();
 
   ensured = true;
 }
@@ -389,7 +456,7 @@ const REQUIRED_COLUMNS: Array<[string, string]> = [
   ['knowledge_entries', 'category_id'],
 ];
 
-const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl', 'knowledge_tags'];
+const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl', 'knowledge_tags', 'knowledge_versions'];
 
 /** 逐项核对 P0 要求的 schema 是否真的落地了 */
 export function verifyKnowledgeSchema(): { ok: boolean; checks: SchemaCheck[] } {

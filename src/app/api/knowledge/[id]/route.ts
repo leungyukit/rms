@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 import { canReadCategory, canWriteCategory } from '@/lib/knowledge-acl';
 import { syncKnowledgeTags, readKnowledgeTags } from '@/lib/knowledge-tags';
+import { snapshotKnowledgeVersion } from '@/lib/knowledge-versions';
 
 // GET: single knowledge entry detail
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -104,6 +105,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (updates.length === 0) return NextResponse.json({ error: '无更新内容' }, { status: 400 });
 
+  // 先快照旧值再更新（P4）。
+  // 不照搬 requirement_versions 的做法 —— 那张表只能手动 POST 触发快照，
+  // 改需求时不自动存版本，结果绝大多数变更都没历史。
+  const oldTags = await readKnowledgeTags(db as any, parseInt(id), existing.tags);
+  await snapshotKnowledgeVersion(
+    db as any,
+    existing,
+    oldTags,
+    typeof body.change_summary === 'string' ? body.change_summary : '内容更新',
+    user.id
+  );
+
   updates.push('updated_at = CURRENT_TIMESTAMP');
   values.push(parseInt(id));
 
@@ -137,6 +150,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   (await db.prepare('DELETE FROM knowledge_feedback WHERE entry_id = ?').run(parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_tags WHERE entry_id = ?').run(parseInt(id)));
+  (await db.prepare('DELETE FROM knowledge_versions WHERE entry_id = ?').run(parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_relations WHERE source_id = ? OR target_id = ?').run(parseInt(id), parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_entries WHERE id = ?').run(parseInt(id)));
 
