@@ -49,9 +49,9 @@ const TABS = [
 ] as const;
 
 const HEALTH_COLORS = {
-  green: { bg: 'badge-success', text: 'text-green-700', ring: '#22c55e' },
-  yellow: { bg: 'badge-warning', text: 'text-yellow-700', ring: '#eab308' },
-  red: { bg: 'badge-danger', text: 'text-red-700', ring: '#ef4444' },
+  green: { bg: 'badge-success', text: 'text-green-700', ring: 'var(--prio-low)' },
+  yellow: { bg: 'badge-warning', text: 'text-yellow-700', ring: 'var(--prio-mid)' },
+  red: { bg: 'badge-danger', text: 'text-red-700', ring: 'var(--prio-high)' },
 } as const;
 
 const MS_STATUS = {
@@ -481,7 +481,7 @@ function HealthRing({ score, level }: { score: number; level: 'green' | 'yellow'
   const offset = C - (score / 100) * C;
   return (
     <svg viewBox="0 0 100 100" className="w-24 h-24">
-      <circle cx="50" cy="50" r={r} fill="none" stroke="#e5e7eb" strokeWidth="8" />
+      <circle cx="50" cy="50" r={r} fill="none" stroke="var(--chart-grid)" strokeWidth="8" />
       <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8"
         strokeDasharray={C} strokeDashoffset={offset}
         strokeLinecap="round" transform="rotate(-90 50 50)" />

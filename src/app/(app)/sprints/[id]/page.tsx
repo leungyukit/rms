@@ -218,19 +218,19 @@ function BurndownChart({ days }: { days: BurndownDay[] }) {
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
         {[0, 0.5, 1].map((p, i) => (
-          <line key={i} x1={P} y1={P + p * (H - 2 * P)} x2={W - P} y2={P + p * (H - 2 * P)} stroke="#f0f0f0" strokeWidth="1" />
+          <line key={i} x1={P} y1={P + p * (H - 2 * P)} x2={W - P} y2={P + p * (H - 2 * P)} stroke="var(--chart-grid)" strokeWidth="1" />
         ))}
-        <path d={idealPath} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4 2" fill="none" />
-        <path d={actualPath} stroke="#3b82f6" strokeWidth="2" fill="none" />
+        <path d={idealPath} stroke="var(--chart-axis)" strokeWidth="1.5" strokeDasharray="4 2" fill="none" />
+        <path d={actualPath} stroke="var(--chart-1)" strokeWidth="2" fill="none" />
         {days.map((d, i) => (
           <g key={i}>
-            <circle cx={xs[i]} cy={yScale(d.actual)} r="2" fill="#3b82f6" />
+            <circle cx={xs[i]} cy={yScale(d.actual)} r="2" fill="var(--chart-1)" />
           </g>
         ))}
       </svg>
       <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-gray-400" style={{ borderTop: '1px dashed #94a3b8' }} /> 理想</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5 bg-gray-800" /> 实际</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ borderTop: '1px dashed var(--chart-axis)' }} /> 理想</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-0.5" style={{ background: 'var(--chart-1)' }} /> 实际</span>
         <span className="ml-auto">{days[0]?.date} ~ {days[days.length - 1]?.date}</span>
       </div>
     </div>

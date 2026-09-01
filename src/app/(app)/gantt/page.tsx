@@ -17,17 +17,17 @@ export const dynamic = 'force-dynamic';
  * 全部走 CSS 变量，深浅两套在 globals.css 里各自定义 —— 写死 hex 的话深色永远对不上。
  */
 const STATUS_COLORS: Record<string, { bg: string; text: string; fg: string }> = {
-  received_not_evaluated:  { bg: 'var(--gantt-idle-bg)',   text: 'var(--gantt-idle-ac)',   fg: 'var(--gantt-idle-fg)' },
-  evaluated_not_scheduled: { bg: 'var(--gantt-queued-bg)', text: 'var(--gantt-queued-ac)', fg: 'var(--gantt-queued-fg)' },
-  scheduled:               { bg: 'var(--gantt-sched-bg)',  text: 'var(--gantt-sched-ac)',  fg: 'var(--gantt-sched-fg)' },
-  in_progress:             { bg: 'var(--gantt-active-bg)', text: 'var(--gantt-active-ac)', fg: 'var(--gantt-active-fg)' },
-  completed:               { bg: 'var(--gantt-done-bg)',   text: 'var(--gantt-done-ac)',   fg: 'var(--gantt-done-fg)' },
-  verified:                { bg: 'var(--gantt-done-bg)',   text: 'var(--gantt-done-ac)',   fg: 'var(--gantt-done-fg)' },
-  closed:                  { bg: 'var(--gantt-closed-bg)', text: 'var(--gantt-closed-ac)', fg: 'var(--gantt-closed-fg)' },
+  received_not_evaluated:  { bg: 'var(--status-idle-bg)',   text: 'var(--status-idle-ac)',   fg: 'var(--status-idle-fg)' },
+  evaluated_not_scheduled: { bg: 'var(--status-queued-bg)', text: 'var(--status-queued-ac)', fg: 'var(--status-queued-fg)' },
+  scheduled:               { bg: 'var(--status-sched-bg)',  text: 'var(--status-sched-ac)',  fg: 'var(--status-sched-fg)' },
+  in_progress:             { bg: 'var(--status-active-bg)', text: 'var(--status-active-ac)', fg: 'var(--status-active-fg)' },
+  completed:               { bg: 'var(--status-done-bg)',   text: 'var(--status-done-ac)',   fg: 'var(--status-done-fg)' },
+  verified:                { bg: 'var(--status-done-bg)',   text: 'var(--status-done-ac)',   fg: 'var(--status-done-fg)' },
+  closed:                  { bg: 'var(--status-closed-bg)', text: 'var(--status-closed-ac)', fg: 'var(--status-closed-fg)' },
 };
 
 const STATUS_FALLBACK = {
-  bg: 'var(--gantt-idle-bg)', text: 'var(--gantt-idle-ac)', fg: 'var(--gantt-idle-fg)',
+  bg: 'var(--status-idle-bg)', text: 'var(--status-idle-ac)', fg: 'var(--status-idle-fg)',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -42,7 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 // 优先级保留红/橙/绿做强对比标记（跟状态梯度区分开，不然全绿分不出轻重缓急）
 const PRIORITY_COLORS: Record<string, string> = {
-  high: 'var(--gantt-prio-high)', medium: 'var(--gantt-prio-mid)', low: 'var(--gantt-prio-low)',
+  high: 'var(--prio-high)', medium: 'var(--prio-mid)', low: 'var(--prio-low)',
 };
 
 // ── 日期工具 ──
@@ -343,7 +343,7 @@ export default async function GanttPage(props: any) {
             const pEnd = parseDate(item.planned_end);
             const isOverdue = !['completed', 'verified', 'closed'].includes(item.status)
                               && pEnd != null && pEnd < today;
-            const pc = PRIORITY_COLORS[item.priority] || 'var(--gantt-prio-none)';
+            const pc = PRIORITY_COLORS[item.priority] || 'var(--prio-none)';
             return (
               <div key={item.id} className={`gantt-row ${isOverdue ? 'gantt-row--overdue' : ''}`}>
                 <div className="gantt-label">
@@ -456,9 +456,9 @@ export default async function GanttPage(props: any) {
           </span>
           <span className="ml-auto">
             优先级
-            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-high)' }} />高
-            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-mid)' }} />中
-            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--gantt-prio-low)' }} />低
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--prio-high)' }} />高
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--prio-mid)' }} />中
+            <span className="inline-block w-2 h-2 rounded-full mx-0.5" style={{ background: 'var(--prio-low)' }} />低
           </span>
         </div>
       </div>

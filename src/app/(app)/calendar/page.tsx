@@ -3,11 +3,29 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 
+/**
+ * 日历状态色：与甘特图共用同一套 --status-* token。
+ *
+ * 原本这里是另一套写死的 hex（灰/橙/蓝/紫/绿/青/灰），跟甘特图那套不一样 ——
+ * 同一个需求在日历里是紫色、在甘特图里是浅紫，两个页面对着看会以为是不同东西。
+ * 现在统一走 CSS 变量，深浅两套自动跟随。
+ *
+ * 取 ac（accent）而不是 bg：日历格子靠透明度叠色（+'15'/+'40'），
+ * 需要的是一个实色基准色。但 CSS 变量拼不了 8 位 hex，
+ * 所以改用 color-mix() 做透明度。
+ */
 const STATUS_COLORS: Record<string, string> = {
-  received_not_evaluated: '#9CA3AF', evaluated_not_scheduled: '#F59E0B',
-  scheduled: '#3B82F6', in_progress: '#8B5CF6', completed: '#10B981',
-  verified: '#06B6D4', closed: '#6B7280',
+  received_not_evaluated: 'var(--status-idle-ac)',
+  evaluated_not_scheduled: 'var(--status-queued-ac)',
+  scheduled: 'var(--status-sched-ac)',
+  in_progress: 'var(--status-active-ac)',
+  completed: 'var(--status-done-ac)',
+  verified: 'var(--status-done-ac)',
+  closed: 'var(--status-closed-ac)',
 };
+const STATUS_FALLBACK = 'var(--status-idle-ac)';
+/** 把一个颜色混入透明：代替原来的 hex + '15' 字符串拼接（CSS 变量拼不了） */
+const tint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
 const PRIORITY_DOT: Record<string, string> = { high: '🔴', medium: '🟡', low: '🟢' };
 
 type ViewMode = 'week' | 'month' | 'day';
@@ -149,9 +167,9 @@ export default function CalendarPage() {
                                         : 'hover:shadow-sm hover:scale-[1.02]'
                                     }`}
                                     style={{
-                                      background: (STATUS_COLORS[r.status] || '#9CA3AF') + '15',
-                                      borderColor: (STATUS_COLORS[r.status] || '#9CA3AF') + '40',
-                                      color: STATUS_COLORS[r.status] || '#6B7280',
+                                      background: tint(STATUS_COLORS[r.status] || STATUS_FALLBACK, 12),
+                                      borderColor: tint(STATUS_COLORS[r.status] || STATUS_FALLBACK, 30),
+                                      color: STATUS_COLORS[r.status] || STATUS_FALLBACK,
                                     }}>
                                     <div className="flex items-center gap-1">
                                       <span className="text-[10px]">{PRIORITY_DOT[r.priority]}</span>
@@ -183,7 +201,7 @@ export default function CalendarPage() {
               <div className="card-body">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs text-gray-400">#{selectedReq.id}</span>
-                  <span className="badge badge-primary" style={{ background: (STATUS_COLORS[selectedReq.status] || '#9CA3AF') + '20', color: STATUS_COLORS[selectedReq.status] }}>
+                  <span className="badge badge-primary" style={{ background: tint(STATUS_COLORS[selectedReq.status] || STATUS_FALLBACK, 18), color: STATUS_COLORS[selectedReq.status] || STATUS_FALLBACK }}>
                     {selectedReq.status_label}
                   </span>
                   <span className="text-sm">{PRIORITY_DOT[selectedReq.priority]} {selectedReq.priority_label}</span>

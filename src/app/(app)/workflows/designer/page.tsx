@@ -40,9 +40,13 @@ const TIME_FIELD_OPTIONS = [
   { value: 'merged_at', label: '合并时间' },
 ];
 
+// 流程节点色：语义固定（开始=绿 / 结束=红 / 任务=蓝 / 条件=橙），走 --node-* token。
+// 不跟 --chart-* 混用：这四个是固定语义，不是可互换的数据系列。
 const NODE_COLORS: Record<string, string> = {
-  start: '#10B981', end: '#EF4444', task: '#3B82F6', condition: '#F59E0B',
+  start: 'var(--node-start)', end: 'var(--node-end)',
+  task: 'var(--node-task)', condition: 'var(--node-cond)',
 };
+const NODE_FALLBACK = 'var(--node-default)';
 
 interface WfNode {
   node_key: string; label: string; type: string; assignee_id: number | null;
@@ -197,9 +201,9 @@ function WorkflowDesignerContent() {
       <div className="flex-1 flex gap-4 overflow-hidden">
         {/* Canvas */}
         <div className="flex-1 card flex flex-col min-w-0">
-          <div className="card-body flex-1" style={{ padding: 0, overflow: 'auto', backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }} ref={canvasRef}
+          <div className="card-body flex-1" style={{ padding: 0, overflow: 'auto', backgroundImage: 'radial-gradient(circle, var(--grid-dot) 1px, transparent 1px)', backgroundSize: '20px 20px' }} ref={canvasRef}
             onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
-            <div className="relative" style={{ minWidth: 1200, minHeight: 500, backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+            <div className="relative" style={{ minWidth: 1200, minHeight: 500, backgroundImage: 'radial-gradient(circle, var(--grid-dot) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
               <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: 1400, minHeight: 400 }}>
                 {edges.map((e, i) => {
                   const from = nodes.find(n => n.node_key === e.from_node);
@@ -208,11 +212,11 @@ function WorkflowDesignerContent() {
                   const x1 = from.pos_x + 60, y1 = from.pos_y + 20, x2 = to.pos_x + 60, y2 = to.pos_y + 20;
                   return (
                     <g key={i} className="pointer-events-auto cursor-pointer" onClick={() => { setSelectedEdge(i); setSelectedNode(null); }}>
-                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={selectedEdge === i ? '#000000' : '#9CA3AF'} strokeWidth={selectedEdge === i ? 3 : 2} markerEnd="url(#arrow)" />
+                      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={selectedEdge === i ? 'var(--node-sel)' : 'var(--chart-axis)'} strokeWidth={selectedEdge === i ? 3 : 2} markerEnd="url(#arrow)" />
                     </g>
                   );
                 })}
-                <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#9CA3AF" /></marker></defs>
+                <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--chart-axis)" /></marker></defs>
               </svg>
 
               {nodes.map(n => (
@@ -220,7 +224,7 @@ function WorkflowDesignerContent() {
                   className={`absolute select-none cursor-pointer rounded-lg border-2 px-4 py-2 text-sm font-medium shadow-sm transition-all ${
                     selectedNode === n.node_key ? 'ring-2 ring-gray-500 shadow-md' : connecting ? 'hover:ring-2 hover:ring-orange-400' : 'hover:shadow-md'
                   }`}
-                  style={{ left: n.pos_x, top: n.pos_y, minWidth: 120, textAlign: 'center', background: NODE_COLORS[n.type] || '#333333', borderColor: selectedNode === n.node_key ? '#000000' : (NODE_COLORS[n.type] || '#333333'), color: 'white' }}
+                  style={{ left: n.pos_x, top: n.pos_y, minWidth: 120, textAlign: 'center', background: NODE_COLORS[n.type] || NODE_FALLBACK, borderColor: selectedNode === n.node_key ? 'var(--node-sel)' : (NODE_COLORS[n.type] || NODE_FALLBACK), color: '#FFFFFF' }}
                   onClick={() => handleNodeClick(n.node_key)} onMouseDown={(e) => handleMouseDown(e, n.node_key)}>
                   <div>{n.label}</div>
                   {n.type === 'condition' && n.config?.condition_type && (

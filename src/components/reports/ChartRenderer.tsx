@@ -29,7 +29,9 @@ interface ChartRendererProps {
   };
 }
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+// 图表系列色：走 --chart-* token，深浅两套自动跟随。
+// 故意保留多色相 —— 图表要区分多个数据系列，全刷成绿色深浅在饼图上根本分不出来。
+const COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)'];
 
 export function ChartRenderer({ type, data, config }: ChartRendererProps) {
   const safeConfig = config || {};
@@ -63,35 +65,37 @@ export function ChartRenderer({ type, data, config }: ChartRendererProps) {
       <ResponsiveContainer width="100%" height="100%">
         {type === 'bar' && (
           <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
             <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #E5E7EB',
+                backgroundColor: 'var(--card-bg)',
+                color: 'var(--foreground)',
+                border: '1px solid var(--border-c)',
                 borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                boxShadow: 'var(--shadow-lg)'
               }}
             />
-            <Bar dataKey={yKey} fill="#3B82F6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey={yKey} fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
           </BarChart>
         )}
 
         {type === 'line' && (
           <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
             <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #E5E7EB',
+                backgroundColor: 'var(--card-bg)',
+                color: 'var(--foreground)',
+                border: '1px solid var(--border-c)',
                 borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                boxShadow: 'var(--shadow-lg)'
               }}
             />
-            <Line type="monotone" dataKey={yKey} stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+            <Line type="monotone" dataKey={yKey} stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
           </LineChart>
         )}
 
@@ -99,22 +103,23 @@ export function ChartRenderer({ type, data, config }: ChartRendererProps) {
           <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
             <defs>
               <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--chart-5)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--chart-5)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chart-grid)" />
             <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #E5E7EB',
+                backgroundColor: 'var(--card-bg)',
+                color: 'var(--foreground)',
+                border: '1px solid var(--border-c)',
                 borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                boxShadow: 'var(--shadow-lg)'
               }}
             />
-            <Area type="monotone" dataKey={yKey} stroke="#8B5CF6" strokeWidth={2} fillOpacity={1} fill="url(#colorGradient)" />
+            <Area type="monotone" dataKey={yKey} stroke="var(--chart-5)" strokeWidth={2} fillOpacity={1} fill="url(#colorGradient)" />
           </AreaChart>
         )}
 
@@ -137,10 +142,11 @@ export function ChartRenderer({ type, data, config }: ChartRendererProps) {
             </Pie>
             <Tooltip
               contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #E5E7EB',
+                backgroundColor: 'var(--card-bg)',
+                color: 'var(--foreground)',
+                border: '1px solid var(--border-c)',
                 borderRadius: '8px',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                boxShadow: 'var(--shadow-lg)'
               }}
             />
             <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px' }} />

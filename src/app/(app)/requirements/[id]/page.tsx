@@ -1188,7 +1188,7 @@ function RequirementWorkflow({ requirementId, workflowId, currentNode, onUpdate 
         {nodes.sort((a: any, b: any) => a.pos_x - b.pos_x).map((node: any, i: number) => {
           const isCurrent = node.node_key === currentNode;
           const isPast = nodes.findIndex((n: any) => n.node_key === currentNode) > i;
-          const color = node.type === 'start' ? '#10B981' : node.type === 'end' ? '#EF4444' : '#3B82F6';
+          const color = node.type === 'start' ? 'var(--node-start)' : node.type === 'end' ? 'var(--node-end)' : 'var(--node-task)';
           return (
             <div key={node.node_key} className="flex items-center shrink-0">
               {i > 0 && <div className={`w-6 h-0.5 ${isPast ? 'bg-green-400' : 'bg-gray-200'}`} />}
@@ -1196,9 +1196,9 @@ function RequirementWorkflow({ requirementId, workflowId, currentNode, onUpdate 
                 isCurrent ? 'ring-2 ring-gray-500 shadow-md scale-105' : isPast ? 'opacity-60' : ''
               }`}
                 style={{
-                  background: isCurrent ? color : isPast ? color + '30' : '#F3F4F6',
-                  borderColor: isCurrent ? color : isPast ? color + '50' : '#E5E7EB',
-                  color: isCurrent ? 'white' : isPast ? color : '#6B7280',
+                  background: isCurrent ? color : isPast ? `color-mix(in srgb, ${color} 18%, transparent)` : 'var(--node-idle-bg)',
+                  borderColor: isCurrent ? color : isPast ? `color-mix(in srgb, ${color} 32%, transparent)` : 'var(--node-idle-bd)',
+                  color: isCurrent ? '#FFFFFF' : isPast ? color : 'var(--node-idle-fg)',
                 }}>
                 {node.label}
               </div>

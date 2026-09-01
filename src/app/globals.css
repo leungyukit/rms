@@ -36,15 +36,33 @@
   /* 甘特图状态色：绿色饱和度梯度承载「推进程度」
      不用 7 个随机色相 —— 那样只能区分状态，看不出进度。
      灰(没动) → 暗绿(排上了) → 品牌绿实心(正在干) → 深绿(收了) → 灰绿(归档) */
-  --gantt-idle-bg: #F5F5F5;      --gantt-idle-ac: #A3A3A3;  --gantt-idle-fg: #525252;
-  --gantt-queued-bg: #EDEDED;    --gantt-queued-ac: #737373; --gantt-queued-fg: #404040;
-  --gantt-sched-bg: #DCF5E9;     --gantt-sched-ac: #24B47E;  --gantt-sched-fg: #146B4A;
-  --gantt-active-bg: #24B47E;    --gantt-active-ac: #14804F; --gantt-active-fg: #FFFFFF;
-  --gantt-done-bg: #D6F0E4;      --gantt-done-ac: #1A9068;   --gantt-done-fg: #115E43;
-  --gantt-closed-bg: #E8EDEA;    --gantt-closed-ac: #8AA398; --gantt-closed-fg: #55665D;
+  --status-idle-bg: #F5F5F5;      --status-idle-ac: #A3A3A3;  --status-idle-fg: #525252;
+  --status-queued-bg: #EDEDED;    --status-queued-ac: #737373; --status-queued-fg: #404040;
+  --status-sched-bg: #DCF5E9;     --status-sched-ac: #24B47E;  --status-sched-fg: #146B4A;
+  --status-active-bg: #24B47E;    --status-active-ac: #14804F; --status-active-fg: #FFFFFF;
+  --status-done-bg: #D6F0E4;      --status-done-ac: #1A9068;   --status-done-fg: #115E43;
+  --status-closed-bg: #E8EDEA;    --status-closed-ac: #8AA398; --status-closed-fg: #55665D;
   /* 优先级保留红/橙/绿做强对比标记 */
-  --gantt-prio-high: #E5484D;    --gantt-prio-mid: #D97706;  --gantt-prio-low: #24B47E;
-  --gantt-prio-none: #A3A3A3;
+  --prio-high: #E5484D;    --prio-mid: #D97706;  --prio-low: #24B47E;
+  --prio-none: #A3A3A3;
+
+  /* 数据可视化调色盘：图表/图谱/流程图
+     注意：这里故意保留多色相。图表要区分多个数据系列，
+     全刷成绿色深浅在折线/饼图上根本分不出来 —— 那是拿可用性换好看。
+     只把饱和度压下去、跟主调对齐。 */
+  --chart-1: #24B47E;  --chart-2: #3E9BCF;  --chart-3: #D97706;
+  --chart-4: #E5484D;  --chart-5: #8B5CF6;  --chart-6: #0E9AA7;
+  --chart-grid: #E5E5E5;
+  --chart-axis: #A3A3A3;
+
+  /* 流程/图谱节点（语义固定，不跟系列颜色混用） */
+  --node-start: #24B47E;   --node-end: #E5484D;    --node-task: #3E9BCF;
+  --node-cond: #D97706;    --node-default: #737373;
+  --node-idle-bg: #F5F5F5; --node-idle-bd: #E5E5E5; --node-idle-fg: #525252;
+  --node-sel: #171717;     --grid-dot: #E5E5E5;
+
+  /* 图谱/图表 tooltip：浅色下用深底浮层（与 Supabase 一致） */
+  --tooltip-bg: #171717;   --tooltip-fg: #FAFAFA;  --tooltip-muted: #A3A3A3;
 
   /* Borders & inputs – subtle low-contrast */
   --border-c: #E5E5E5;
@@ -93,14 +111,28 @@
 
   /* 甘特图状态色（深色）：原本 7 块浅色 pastel 贴在 #1C1C1C 上是一排刺眼亮斑，
      这里全部压暗，只让「处理中」用亮绿实心跳出来 */
-  --gantt-idle-bg: #262626;      --gantt-idle-ac: #737373;   --gantt-idle-fg: #A3A3A3;
-  --gantt-queued-bg: #2E2E2E;    --gantt-queued-ac: #8A8A8A; --gantt-queued-fg: #C4C4C4;
-  --gantt-sched-bg: #14392B;     --gantt-sched-ac: #3ECF8E;  --gantt-sched-fg: #8FE3BE;
-  --gantt-active-bg: #3ECF8E;    --gantt-active-ac: #A7F3D0; --gantt-active-fg: #06281B;
-  --gantt-done-bg: #19402F;      --gantt-done-ac: #2FA97A;   --gantt-done-fg: #7FD8B4;
-  --gantt-closed-bg: #232B27;    --gantt-closed-ac: #5F7A6C; --gantt-closed-fg: #90A69A;
-  --gantt-prio-high: #F87171;    --gantt-prio-mid: #FBBF24;  --gantt-prio-low: #3ECF8E;
-  --gantt-prio-none: #737373;
+  --status-idle-bg: #262626;      --status-idle-ac: #737373;   --status-idle-fg: #A3A3A3;
+  --status-queued-bg: #2E2E2E;    --status-queued-ac: #8A8A8A; --status-queued-fg: #C4C4C4;
+  --status-sched-bg: #14392B;     --status-sched-ac: #3ECF8E;  --status-sched-fg: #8FE3BE;
+  --status-active-bg: #3ECF8E;    --status-active-ac: #A7F3D0; --status-active-fg: #06281B;
+  --status-done-bg: #19402F;      --status-done-ac: #2FA97A;   --status-done-fg: #7FD8B4;
+  --status-closed-bg: #232B27;    --status-closed-ac: #5F7A6C; --status-closed-fg: #90A69A;
+  --prio-high: #F87171;    --prio-mid: #FBBF24;  --prio-low: #3ECF8E;
+  --prio-none: #737373;
+
+  /* 数据可视化（深色）：整体提亮一档，否则深色底上看不清 */
+  --chart-1: #3ECF8E;  --chart-2: #60A5FA;  --chart-3: #FBBF24;
+  --chart-4: #F87171;  --chart-5: #A78BFA;  --chart-6: #22D3EE;
+  --chart-grid: #2E2E2E;
+  --chart-axis: #737373;
+
+  --node-start: #3ECF8E;   --node-end: #F87171;    --node-task: #60A5FA;
+  --node-cond: #FBBF24;    --node-default: #8A8A8A;
+  --node-idle-bg: #262626; --node-idle-bd: #363636; --node-idle-fg: #A3A3A3;
+  --node-sel: #EDEDED;     --grid-dot: #2E2E2E;
+
+  /* 深色下 tooltip 反而要比底色亮，否则浮层洗不出来 */
+  --tooltip-bg: #2E2E2E;   --tooltip-fg: #FAFAFA;  --tooltip-muted: #A3A3A3;
 
   --border-c: #2E2E2E;
   --input-c: #404040;

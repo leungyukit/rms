@@ -6,10 +6,13 @@ import Link from 'next/link';
 interface GraphNode { id: string; type: string; label: string; x?: number; y?: number; vx?: number; vy?: number; }
 interface GraphEdge { source: string; target: string; type: string; }
 
+// 图谱节点色：走 --chart-* token（节点类型本质也是「多系列区分」，跟图表同一套色盘）。
+// 深浅两套自动跟随；保留多色相是故意的 —— 6 种节点全刷成绿色深浅就分不出类型了。
 const NODE_COLORS: Record<string, string> = {
-  requirement: '#3B82F6', project: '#8B5CF6', tag: '#F59E0B',
-  person: '#EF4444', business_unit: '#F97316', knowledge: '#10B981',
+  requirement: 'var(--chart-2)', project: 'var(--chart-5)', tag: 'var(--chart-3)',
+  person: 'var(--chart-4)', business_unit: 'var(--chart-6)', knowledge: 'var(--chart-1)',
 };
+const NODE_FALLBACK = 'var(--node-default)';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   requirement: '需求', project: '项目', tag: '标签',
@@ -221,20 +224,20 @@ export default function KnowledgeGraphPage() {
               {data.edges.map((edge, i) => {
                 const s = positions.get(edge.source), t = positions.get(edge.target);
                 if (!s || !t) return null;
-                return <g key={i}><line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="#cbd5e1" strokeWidth={1.5} /><text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 6} textAnchor="middle" fill="#94a3b8" fontSize={9}>{edge.type}</text></g>;
+                return <g key={i}><line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="var(--border-c)" strokeWidth={1.5} /><text x={(s.x + t.x) / 2} y={(s.y + t.y) / 2 - 6} textAnchor="middle" fill="var(--muted-fg)" fontSize={9}>{edge.type}</text></g>;
               })}
               {data.nodes.map(node => {
                 const p = positions.get(node.id);
                 if (!p) return null;
-                const color = NODE_COLORS[node.type] || '#6B7280';
+                const color = NODE_COLORS[node.type] || NODE_FALLBACK;
                 const isHovered = hoveredId === node.id, isSelected = selectedId === node.id;
                 const r = isHovered || isSelected ? 20 : 14;
                 return (
                   <g key={node.id} style={{ cursor: 'pointer' }}>
                     <circle cx={p.x} cy={p.y} r={r + 4} fill="transparent" />
-                    <circle cx={p.x} cy={p.y} r={r} fill={color} stroke={isSelected ? '#1e293b' : isHovered ? '#fff' : 'none'} strokeWidth={isSelected ? 3 : 2} />
-                    <text x={p.x} y={p.y + r + 15} textAnchor="middle" fill="#1e293b" fontSize={11} fontWeight="bold">{node.label.length > 12 ? node.label.slice(0, 12) + '...' : node.label}</text>
-                    <text x={p.x} y={p.y + r + 27} textAnchor="middle" fill="#64748b" fontSize={9}>{NODE_TYPE_LABELS[node.type] || node.type}</text>
+                    <circle cx={p.x} cy={p.y} r={r} fill={color} stroke={isSelected ? 'var(--node-sel)' : isHovered ? 'var(--card-bg)' : 'none'} strokeWidth={isSelected ? 3 : 2} />
+                    <text x={p.x} y={p.y + r + 15} textAnchor="middle" fill="var(--foreground)" fontSize={11} fontWeight="bold">{node.label.length > 12 ? node.label.slice(0, 12) + '...' : node.label}</text>
+                    <text x={p.x} y={p.y + r + 27} textAnchor="middle" fill="var(--muted-fg)" fontSize={9}>{NODE_TYPE_LABELS[node.type] || node.type}</text>
                   </g>
                 );
               })}
@@ -242,9 +245,9 @@ export default function KnowledgeGraphPage() {
                 const p = positions.get(hoveredNode.id);
                 if (!p) return null;
                 return (
-                  <g><rect x={p.x + 22} y={p.y - 18} width={220} height={36} rx={6} fill="rgba(30,41,59,0.95)" />
-                    <text x={p.x + 32} y={p.y - 1} fill="#fff" fontSize={12} fontWeight="bold">{hoveredNode.label.length > 20 ? hoveredNode.label.slice(0, 20) + '...' : hoveredNode.label}</text>
-                    <text x={p.x + 32} y={p.y + 14} fill="#94a3b8" fontSize={10}>{NODE_TYPE_LABELS[hoveredNode.type] || hoveredNode.type}</text>
+                  <g><rect x={p.x + 22} y={p.y - 18} width={220} height={36} rx={6} fill="var(--tooltip-bg)" stroke="var(--border-c)" />
+                    <text x={p.x + 32} y={p.y - 1} fill="var(--tooltip-fg)" fontSize={12} fontWeight="bold">{hoveredNode.label.length > 20 ? hoveredNode.label.slice(0, 20) + '...' : hoveredNode.label}</text>
+                    <text x={p.x + 32} y={p.y + 14} fill="var(--tooltip-muted)" fontSize={10}>{NODE_TYPE_LABELS[hoveredNode.type] || hoveredNode.type}</text>
                   </g>
                 );
               })()}
@@ -257,7 +260,7 @@ export default function KnowledgeGraphPage() {
         <div className="card mt-4">
           <div className="card-body">
             <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-full" style={{ background: NODE_COLORS[selectedNode.type] || '#6B7280' }} />
+              <div className="w-3 h-3 rounded-full" style={{ background: NODE_COLORS[selectedNode.type] || NODE_FALLBACK }} />
               <span className="text-xs text-gray-500">{NODE_TYPE_LABELS[selectedNode.type] || selectedNode.type}</span>
             </div>
             <h3 className="font-bold text-gray-900">{selectedNode.label}</h3>
