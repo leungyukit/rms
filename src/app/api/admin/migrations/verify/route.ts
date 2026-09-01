@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
 import { ensureKnowledgeTables, verifyKnowledgeSchema, resetKnowledgeMigrationCache } from '@/lib/knowledge-migrations';
+import { ensureFtsIndexes, verifyFtsSchema, resetFtsMigrationCache } from '@/lib/fts-migrations';
 
 /**
  * 迁移自检
@@ -22,16 +23,23 @@ export async function GET(req: NextRequest) {
     if (repair) {
       resetKnowledgeMigrationCache();
       ensureKnowledgeTables();
+      resetFtsMigrationCache();
+      ensureFtsIndexes();
     }
 
     const knowledge = verifyKnowledgeSchema();
-    const missing = knowledge.checks.filter(c => !c.present).map(c => c.target);
+    const fts = verifyFtsSchema();
+    const allChecks = [
+      ...knowledge.checks.map(c => ({ ...c, group: 'knowledge-schema' })),
+      ...fts.checks.map(c => ({ ...c, group: 'fulltext-search' })),
+    ];
+    const missing = allChecks.filter(c => !c.present).map(c => c.target);
 
     return NextResponse.json({
-      ok: knowledge.ok,
+      ok: knowledge.ok && fts.ok,
       repaired: repair,
       missing,
-      checks: knowledge.checks,
+      checks: allChecks,
     });
   } catch (e: any) {
     // 这里故意不吞：迁移失败就要看得见

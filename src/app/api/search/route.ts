@@ -7,6 +7,25 @@ export const dynamic = 'force-dynamic';
 
 interface Hit { type: string; id: number; title: string; snippet: string; score: number; [k: string]: any; }
 
+/**
+ * bigram 噪音过滤
+ *
+ * ngram 分词把「需求池」切成「需求」+「求池」，只命中其中一个 bigram 的条目
+ * 也会进结果集。实测搜「需求池」召回 5 条，最高分 10.9，后 4 条 0.83 且完全不相关。
+ *
+ * 用「相对最高分」而非绝对阈值：FULLTEXT 分数随语料规模浮动，
+ * 写死一个数字换个库就失效。
+ */
+const RELEVANCE_RATIO = 0.12;
+
+function dropWeakHits<T extends { score?: number }>(rows: T[]): T[] {
+  if (rows.length <= 1) return rows;
+  const top = Math.max(...rows.map(r => Number(r.score) || 0));
+  // LIKE 兜底路径所有 score 都是 1，比值恒为 1，不会误杀
+  if (top <= 0) return rows;
+  return rows.filter(r => (Number(r.score) || 0) >= top * RELEVANCE_RATIO);
+}
+
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
@@ -77,7 +96,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, limit)) as any[];
       }
     }
-    for (const r of rows.slice(0, limit)) {
+    for (const r of dropWeakHits(rows).slice(0, limit)) {
       results.push({
         type: 'requirement',
         id: r.id,
@@ -128,7 +147,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, limit)) as any[];
       }
     }
-    for (const r of rows.slice(0, limit)) {
+    for (const r of dropWeakHits(rows).slice(0, limit)) {
       results.push({
         type: 'knowledge',
         id: r.id,
@@ -174,7 +193,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, limit)) as any[];
       }
     }
-    for (const r of rows.slice(0, limit)) {
+    for (const r of dropWeakHits(rows).slice(0, limit)) {
       results.push({
         type: 'project',
         id: r.id,
