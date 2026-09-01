@@ -114,92 +114,88 @@ function LoginContent() {
   const hasAnyOAuth = wecomEnabled || feishuEnabled || dingtalkEnabled;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] p-4">
       <div className="w-full max-w-md">
         <div className="mb-8">
           <img src="/logo.png" alt="RMS Logo" className="w-16 h-16 object-contain mb-4" />
-          <h1 className="text-3xl font-extrabold text-black uppercase tracking-tight">{t('auth.loginSubtitle')}</h1>
-          <p className="text-sm font-semibold text-[#444] mt-1">{t('requirement.title')}{t('common.search')}{t('dashboard.myRequirements')}</p>
+          <h1 className="text-2xl font-semibold text-[var(--foreground)] tracking-tight">{t('auth.loginSubtitle')}</h1>
+          <p className="text-sm text-[var(--muted-fg)] mt-1.5">{t('requirement.title')}{t('common.search')}{t('dashboard.myRequirements')}</p>
         </div>
 
-        <div className="bg-white border-[3px] border-black p-8" style={{ boxShadow: '8px 8px 0 #1A1A1A' }}>
+        <div className="bg-[var(--card-bg)] border border-[var(--border-c)] rounded-lg p-8" style={{ boxShadow: 'var(--shadow-lg)' }}>
           {showQrCode === 'wecom' ? (
             /* ===== WeCom QR Code View ===== */
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-extrabold uppercase">{t('auth.wechatWorkLogin')}</h2>
-                <button onClick={() => setShowQrCode(null)} className="text-sm font-bold text-black hover:underline">
+                <h2 className="text-base font-semibold text-[var(--foreground)]">{t('auth.wechatWorkLogin')}</h2>
+                <button onClick={() => setShowQrCode(null)} className="text-sm font-medium text-[var(--primary-c)] hover:underline underline-offset-2">
                   ← {t('auth.goLogin')}
                 </button>
               </div>
 
               <div className="flex flex-col items-center">
-                <div id="wecom_qr_container" ref={qrRef} className="w-[300px] h-[400px] flex items-center justify-center border-[3px] border-black">
-                  <div className="text-sm font-bold text-[#444] animate-pulse">{t('common.loading')}</div>
+                <div id="wecom_qr_container" ref={qrRef} className="w-[300px] h-[400px] flex items-center justify-center border border-[var(--border-c)] rounded-md">
+                  <div className="text-sm text-[var(--muted-fg)] animate-pulse">{t('common.loading')}</div>
                 </div>
-                <p className="text-xs font-semibold text-[#444] mt-2">{t('auth.wechatWorkLogin')}</p>
-                <p className="text-xs font-medium text-[#888] mt-1">{t('auth.sessionExpired')}</p>
+                <p className="text-xs text-[var(--muted-fg)] mt-2">{t('auth.wechatWorkLogin')}</p>
+                <p className="text-xs text-[var(--muted-fg)] opacity-70 mt-1">{t('auth.sessionExpired')}</p>
               </div>
 
-              {error && <div className="bg-[#FF1744] text-white font-bold text-sm border-[3px] border-black p-3 mt-4" style={{ boxShadow: '4px 4px 0 #1A1A1A' }}>{error}</div>}
+              {error && <div className="alert alert-danger text-sm mt-4">{error}</div>}
             </div>
           ) : (
             /* ===== Normal Login/Register Form ===== */
             <div>
-              <h2 className="text-xl font-extrabold uppercase mb-6 inline-block bg-[#FFD600] border-[3px] border-black px-3 py-1" style={{ boxShadow: '4px 4px 0 #1A1A1A' }}>{isRegister ? t('auth.register') : t('auth.login')}</h2>
+              <h2 className="text-lg font-semibold mb-6 text-[var(--foreground)]">{isRegister ? t('auth.register') : t('auth.login')}</h2>
 
               <form onSubmit={submit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-bold uppercase tracking-wide text-black mb-1">{t('auth.username')}</label>
+                  <label className="form-label">{t('auth.username')}</label>
                   <input value={username} onChange={e => setUsername(e.target.value)}
-                    className="w-full border-[3px] border-black px-4 py-2.5 text-sm font-medium focus:outline-none"
-                    style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                    className="form-input"
                     placeholder={t('auth.username')} required />
                 </div>
                 {isRegister && (
                   <div>
-                    <label className="block text-sm font-bold uppercase tracking-wide text-black mb-1">{t('user.displayName')}</label>
+                    <label className="form-label">{t('user.displayName')}</label>
                     <input value={displayName} onChange={e => setDisplayName(e.target.value)}
-                      className="w-full border-[3px] border-black px-4 py-2.5 text-sm font-medium focus:outline-none"
-                      style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                      className="form-input"
                       placeholder={t('user.displayName')} />
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-bold uppercase tracking-wide text-black mb-1">{t('auth.password')}</label>
+                  <label className="form-label">{t('auth.password')}</label>
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                    className="w-full border-[3px] border-black px-4 py-2.5 text-sm font-medium focus:outline-none"
-                    style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                    className="form-input"
                     placeholder={t('auth.password')} required />
                 </div>
 
-                {error && <div className="bg-[#FF1744] text-white font-bold text-sm border-[3px] border-black p-3" style={{ boxShadow: '4px 4px 0 #1A1A1A' }}>{error}</div>}
+                {error && <div className="alert alert-danger text-sm">{error}</div>}
 
                 <button type="submit" disabled={loading}
-                  className="w-full bg-[#FFD600] text-black py-3 border-[3px] border-black text-sm font-extrabold uppercase tracking-wide disabled:opacity-40 hover:-translate-x-[3px] hover:-translate-y-[3px] active:translate-x-0 active:translate-y-0 transition-transform"
-                  style={{ boxShadow: '5px 5px 0 #1A1A1A' }}>
+                  className="btn btn-primary w-full btn-lg">
                   {loading ? t('misc.processing') : isRegister ? t('auth.register') : t('auth.login')}
                 </button>
               </form>
 
               <div className="mt-4 text-center">
                 <button onClick={() => { setIsRegister(!isRegister); setError(''); }}
-                  className="text-sm font-bold text-black underline decoration-2 underline-offset-4 hover:bg-[#00E5FF] px-1">
+                  className="text-sm font-medium text-[var(--primary-c)] hover:underline underline-offset-2 px-1 transition-colors">
                   {isRegister ? t('auth.haveAccount') + ' ' + t('auth.goLogin') : t('auth.needAccount') + ' ' + t('auth.goRegister')}
                 </button>
               </div>
 
               {/* OAuth Login Icons */}
               {hasAnyOAuth && !isRegister && (
-                <div className="mt-6 pt-5 border-t-[3px] border-black">
+                <div className="mt-6 pt-5 border-t border-[var(--border-c)]">
                   <div className="text-center">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#444] mb-3">{t('auth.needAccount')}</p>
+                    <p className="text-xs text-[var(--muted-fg)] mb-3">{t('auth.needAccount')}</p>
                     <div className="flex justify-center gap-4">
                       {wecomEnabled && (
                         <button
                           onClick={() => { setShowQrCode('wecom'); setError(''); }}
-                          className="inline-flex items-center justify-center w-12 h-12 bg-[#07C160] border-[3px] border-black hover:-translate-x-[2px] hover:-translate-y-[2px] active:translate-x-0 active:translate-y-0 transition-transform"
-                          style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                          className="inline-flex items-center justify-center w-12 h-12 rounded-md bg-[#07C160] hover:opacity-90 transition-opacity"
+                          style={{ boxShadow: 'var(--shadow)' }}
                           title="企业微信扫码登录"
                         >
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
@@ -211,8 +207,8 @@ function LoginContent() {
                       {feishuEnabled && (
                         <button
                           onClick={() => handleOAuthLogin('feishu')}
-                          className="inline-flex items-center justify-center w-12 h-12 bg-[#427BA8] border-[3px] border-black hover:-translate-x-[2px] hover:-translate-y-[2px] active:translate-x-0 active:translate-y-0 transition-transform"
-                          style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                          className="inline-flex items-center justify-center w-12 h-12 rounded-md bg-[#427BA8] hover:opacity-90 transition-opacity"
+                          style={{ boxShadow: 'var(--shadow)' }}
                           title="飞书扫码登录"
                         >
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
@@ -223,8 +219,8 @@ function LoginContent() {
                       {dingtalkEnabled && (
                         <button
                           onClick={() => handleOAuthLogin('dingtalk')}
-                          className="inline-flex items-center justify-center w-12 h-12 bg-[#1677FF] border-[3px] border-black hover:-translate-x-[2px] hover:-translate-y-[2px] active:translate-x-0 active:translate-y-0 transition-transform"
-                          style={{ boxShadow: '4px 4px 0 #1A1A1A' }}
+                          className="inline-flex items-center justify-center w-12 h-12 rounded-md bg-[#1677FF] hover:opacity-90 transition-opacity"
+                          style={{ boxShadow: 'var(--shadow)' }}
                           title="钉钉扫码登录"
                         >
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
@@ -233,7 +229,7 @@ function LoginContent() {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs font-bold text-[#444] mt-2">
+                    <p className="text-xs text-[var(--muted-fg)] mt-2">
                       {[wecomEnabled && '企业微信', feishuEnabled && '飞书', dingtalkEnabled && '钉钉'].filter(Boolean).join(' · ')}
                     </p>
                   </div>
@@ -243,7 +239,7 @@ function LoginContent() {
           )}
         </div>
 
-        <p className="text-center text-xs font-semibold text-[#888] mt-6">
+        <p className="text-center text-xs text-[var(--muted-fg)] mt-6">
           {hasAnyOAuth ? `${[wecomEnabled && t('auth.wechatWorkLogin'), feishuEnabled && t('auth.feishuLogin'), dingtalkEnabled && t('auth.dingtalkLogin')].filter(Boolean).join(' · ')} · ` : ''}{t('user.autoRegister')}
         </p>
       </div>
@@ -253,7 +249,7 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#FFF8F0]"><div className="font-bold text-[#444] border-[3px] border-black p-4" style={{boxShadow:'4px 4px 0 #1A1A1A'}}>加载中...</div></div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[var(--background)]"><div className="text-sm text-[var(--muted-fg)] border border-[var(--border-c)] rounded-md p-4" style={{boxShadow:'var(--shadow)'}}>加载中...</div></div>}>
       <LoginContent />
     </Suspense>
   );
