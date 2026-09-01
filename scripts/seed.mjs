@@ -95,6 +95,8 @@ const menuItems = [
   { href: '/knowledge', icon: '📚', label_key: 'nav.knowledge', section: 'knowledge', sort_order: 1 },
   { href: '/knowledge/graph', icon: '🕸️', label_key: 'knowledge.graph', section: 'knowledge', sort_order: 2 },
   { href: '/knowledge/insights', icon: '💡', label_key: 'knowledge.insights', section: 'knowledge', sort_order: 3 },
+  { href: '/knowledge/categories', icon: '🗂️', label_key: '分类管理', section: 'knowledge', sort_order: 4 },
+  { href: '/knowledge/capture-tasks', icon: '📥', label_key: '沉淀待办', section: 'knowledge', sort_order: 5 },
   { href: '/profile/tokens', icon: '🔑', label_key: 'Token 管理', section: 'admin', sort_order: 1 },
   { href: '/admin/users', icon: '👥', label_key: 'admin.users', section: 'admin', sort_order: 2 },
   { href: '/admin/audit-logs', icon: '📋', label_key: 'admin.auditLog', section: 'admin', sort_order: 3 },
@@ -121,7 +123,9 @@ const businessHrefs = [
   '/sprints', '/timesheet', '/projects',
   '/dashboard', '/sla-dashboard', '/workload', '/calendar',
   '/custom-reports', '/custom-dashboards', '/data-sources', '/db-explorer',
-  '/knowledge', '/knowledge/graph', '/knowledge/insights',
+  '/knowledge', '/knowledge/graph', '/knowledge/insights', '/knowledge/capture-tasks',
+  // 注意：/knowledge/categories 不在此列 —— 它的写操作（建分类、改分类、配 ACL）
+  // 全部要求 isGlobalAdmin。给业务角色开这个菜单，他们进去只会看到一堆点了就 403 的按钮。
 ];
 for (const href of businessHrefs) {
   const mid = menuIdByHref[href];
@@ -131,6 +135,19 @@ for (const href of businessHrefs) {
   }
 }
 // login_only: no permissions (implicitly denied)
+
+// 仅管理员可见的业务菜单：显式写 allowed=0 而不是留空。
+// 原因：管理侧 GET 把「无记录」当成已勾选（?? true）显示，
+// 而用户侧要求显式 allowed=1 才放行 —— 两边判定相反。
+// 留 0 才能让菜单权限界面如实显示「已拒绝」。
+const adminOnlyBusinessHrefs = ['/knowledge/categories'];
+for (const href of adminOnlyBusinessHrefs) {
+  const mid = menuIdByHref[href];
+  if (mid) {
+    insertPerm.run(receiverRole.id, mid, 0);
+    insertPerm.run(handlerRole.id, mid, 0);
+  }
+}
 
 // Projects
 const insertProject = db.prepare('INSERT OR IGNORE INTO projects (name, description, created_by) VALUES (?, ?, ?)');

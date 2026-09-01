@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser, isGlobalAdmin } from '@/lib/auth';
 import { ensureKnowledgeTables, verifyKnowledgeSchema, resetKnowledgeMigrationCache } from '@/lib/knowledge-migrations';
 import { ensureFtsIndexes, verifyFtsSchema, resetFtsMigrationCache } from '@/lib/fts-migrations';
+import { auditMenuPermissions } from '@/lib/menu-audit';
 
 /**
  * 迁移自检
@@ -29,17 +30,34 @@ export async function GET(req: NextRequest) {
 
     const knowledge = verifyKnowledgeSchema();
     const fts = verifyFtsSchema();
+
+    // 菜单权限审计（2026-09-01 加）：新增菜单时只插 menu_items
+    // 却忘了 role_menu_permissions，非管理员会完全打不开 ——
+    // 而管理侧界面把「无记录」显示成已勾选，看不出毛病。
+    const menu = auditMenuPermissions();
+
     const allChecks = [
       ...knowledge.checks.map(c => ({ ...c, group: 'knowledge-schema' })),
       ...fts.checks.map(c => ({ ...c, group: 'fulltext-search' })),
+      ...menu.issues.map(i => ({
+        target: `menu_items.${i.href} 无任何角色权限记录`,
+        kind: 'table' as const,
+        present: false,
+        group: 'menu-permissions',
+      })),
     ];
     const missing = allChecks.filter(c => !c.present).map(c => c.target);
 
     return NextResponse.json({
-      ok: knowledge.ok && fts.ok,
+      ok: knowledge.ok && fts.ok && menu.ok,
       repaired: repair,
       missing,
       checks: allChecks,
+      menu: {
+        ok: menu.ok,
+        menuTotal: menu.menuTotal,
+        unregistered: menu.issues.map(i => i.href),
+      },
     });
   } catch (e: any) {
     // 这里故意不吞：迁移失败就要看得见
