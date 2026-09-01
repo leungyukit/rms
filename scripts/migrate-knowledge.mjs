@@ -65,6 +65,9 @@ const COLUMNS = [
   ['knowledge_relations', 'weight', 'DOUBLE NOT NULL DEFAULT 1.0'],
   // P2：知识条目挂到分类树；老 category 字符串列保留只读兼容，不删
   ['knowledge_entries', 'category_id', 'INT NULL'],
+  // P3：标签归一化键。存量 31 条需求标签可能有重复变体，
+  // 所以先加普通索引不加 UNIQUE，去重交给应用层，避免迁移直接失败。
+  ['tags', 'norm_key', 'VARCHAR(100) NULL'],
 ];
 
 /** 要改名的列：[表, 旧名, 新名, 定义] */
@@ -84,6 +87,7 @@ const INDEXES = [
   ['knowledge_entries', 'idx_ke_freshness', 'freshness_status, next_review_at'],
   ['knowledge_entries', 'idx_ke_ai_review', 'ai_generated, status'],
   ['knowledge_entries', 'idx_ke_category_id', 'category_id'],
+  ['tags', 'idx_tags_norm', 'norm_key'],
 ];
 
 /**
@@ -120,6 +124,14 @@ const TABLES = [
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uk_kca (category_id, role_name),
       KEY idx_kca_role (role_name, can_read)
+    )`],
+  ['knowledge_tags', `
+    CREATE TABLE knowledge_tags (
+      entry_id INT NOT NULL,
+      tag_id INT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (entry_id, tag_id),
+      KEY idx_kt_tag (tag_id)
     )`],
 ];
 

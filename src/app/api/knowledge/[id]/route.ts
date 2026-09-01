@@ -3,6 +3,7 @@ import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 import { canReadCategory, canWriteCategory } from '@/lib/knowledge-acl';
+import { syncKnowledgeTags, readKnowledgeTags } from '@/lib/knowledge-tags';
 
 // GET: single knowledge entry detail
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Increment view count
   (await db.prepare('UPDATE knowledge_entries SET view_count = view_count + 1 WHERE id = ?').run(parseInt(id)));
   entry.view_count += 1;
-  entry.tags = (() => { try { return JSON.parse(entry.tags); } catch { return []; } })();
+  entry.tags = await readKnowledgeTags(db as any, parseInt(id), entry.tags);
 
   // Get feedback stats
   const feedback = (await db.prepare(`
@@ -96,6 +97,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
   if (body.tags !== undefined) {
+    // 双写（P3）：老 JSON 列继续写，同时同步 join 表
     updates.push('tags = ?');
     values.push(JSON.stringify(body.tags));
   }
@@ -107,7 +109,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   (await db.prepare(`UPDATE knowledge_entries SET ${updates.join(', ')} WHERE id = ?`).run(...values));
 
-  return NextResponse.json({ success: true });
+  // join 表同步放在 UPDATE 之后：先保证主表写成功，再重建关联（P3）
+  let savedTags: string[] | undefined;
+  if (body.tags !== undefined) {
+    savedTags = await syncKnowledgeTags(db as any, parseInt(id), body.tags);
+  }
+
+  return NextResponse.json({ success: true, ...(savedTags ? { tags: savedTags } : {}) });
 }
 
 // DELETE: delete knowledge entry
@@ -128,6 +136,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 
   (await db.prepare('DELETE FROM knowledge_feedback WHERE entry_id = ?').run(parseInt(id)));
+  (await db.prepare('DELETE FROM knowledge_tags WHERE entry_id = ?').run(parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_relations WHERE source_id = ? OR target_id = ?').run(parseInt(id), parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_entries WHERE id = ?').run(parseInt(id)));
 

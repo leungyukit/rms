@@ -296,6 +296,51 @@ function createCategoryTables() {
   createIndexIfMissing('knowledge_entries', 'idx_ke_category_id', 'category_id');
 }
 
+/**
+ * 知识标签 join 表 + tags 表归一化键
+ *
+ * 改造前知识标签是 knowledge_entries.tags 里的 JSON 字符串，与正经的 tags 表
+ * （只服务需求）完全脱节 → 无法聚合、无法按标签检索，
+ * 且「权限管理」/「权限管理 」会各算一个标签。
+ *
+ * norm_key 是归一化键（见 tag-normalize.ts），用于去重和匹配；
+ * name 保留用户原始输入用于展示。
+ */
+function createTagTables() {
+  const db = getDb();
+
+  // tags 表本身加归一化键（已有 31 条需求标签，不能直接加 UNIQUE，
+  // 先加普通索引；去重交给应用层，避免迁移时因存量重复直接失败）
+  addColumnIfMissing('tags', 'norm_key', 'VARCHAR(100) NULL', 'TEXT');
+  createIndexIfMissing('tags', 'idx_tags_norm', 'norm_key');
+
+  if (isMysqlEnabled()) {
+    if (!mysqlTableExists('knowledge_tags')) {
+      db.exec(`
+        CREATE TABLE knowledge_tags (
+          entry_id INT NOT NULL,
+          tag_id INT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (entry_id, tag_id),
+          KEY idx_kt_tag (tag_id)
+        )
+      `);
+    }
+  } else {
+    if (!sqliteTableExists('knowledge_tags')) {
+      db.exec(`
+        CREATE TABLE knowledge_tags (
+          entry_id INTEGER NOT NULL,
+          tag_id INTEGER NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (entry_id, tag_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_kt_tag ON knowledge_tags(tag_id);
+      `);
+    }
+  }
+}
+
 // ---------- 入口 ----------
 
 export function ensureKnowledgeTables() {
@@ -307,6 +352,7 @@ export function ensureKnowledgeTables() {
   fixFreshnessColumns();
   fixAiReviewColumns();
   createCategoryTables();
+  createTagTables();
 
   ensured = true;
 }
@@ -343,7 +389,7 @@ const REQUIRED_COLUMNS: Array<[string, string]> = [
   ['knowledge_entries', 'category_id'],
 ];
 
-const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl'];
+const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl', 'knowledge_tags'];
 
 /** 逐项核对 P0 要求的 schema 是否真的落地了 */
 export function verifyKnowledgeSchema(): { ok: boolean; checks: SchemaCheck[] } {

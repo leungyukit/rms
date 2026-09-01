@@ -3,6 +3,7 @@ import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser, hasFunctionalAccess } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 import { buildKnowledgeReadFilter, canWriteCategory } from '@/lib/knowledge-acl';
+import { syncKnowledgeTags, entryIdsByTag, readKnowledgeTags } from '@/lib/knowledge-tags';
 
 // GET: list/search knowledge entries
 export async function GET(req: NextRequest) {
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get('category');
   const keyword = searchParams.get('keyword');
   const sourceId = searchParams.get('source_requirement_id');
+  const categoryId = searchParams.get('category_id');
+  const tag = searchParams.get('tag');
   const page = parseInt(searchParams.get('page') || '1');
   const pageSize = parseInt(searchParams.get('pageSize') || '20');
   const offset = (page - 1) * pageSize;
@@ -29,6 +32,29 @@ export async function GET(req: NextRequest) {
   if (status) { where.push('ke.status = ?'); params.push(status); }
   if (category) { where.push('ke.category = ?'); params.push(category); }
   if (sourceId) { where.push('ke.source_requirement_id = ?'); params.push(parseInt(sourceId)); }
+
+  // 按分类树过滤（P3）。含子树：path 前缀匹配，不靠递归 CTE（兼容 MySQL 5.7）。
+  //
+  // 先取出父节点 path 再拼 LIKE 参数，而不是在 SQL 里用 CONCAT()：
+  // CONCAT 是 MySQL 方言，SQLite 用 || —— 本项目双库，写方言函数会在 SQLite 下炸。
+  if (categoryId && /^\d+$/.test(categoryId)) {
+    const cat = (await db.prepare('SELECT path FROM knowledge_categories WHERE id = ?').get(parseInt(categoryId))) as any;
+    if (!cat) {
+      return NextResponse.json({ items: [], total: 0, page, pageSize });
+    }
+    where.push(`ke.category_id IN (SELECT c.id FROM knowledge_categories c WHERE c.path LIKE ?)`);
+    params.push(`${cat.path}%`);
+  }
+
+  // 按标签过滤（P3）。走归一化键，「权限管理」与「权限管理 」视同一个标签。
+  if (tag) {
+    const ids = await entryIdsByTag(db as any, tag);
+    if (ids.length === 0) {
+      return NextResponse.json({ items: [], total: 0, page, pageSize });
+    }
+    where.push(`ke.id IN (${ids.map(() => '?').join(',')})`);
+    params.push(...ids);
+  }
 
   // 分类级读权限（P2）—— 改造前拿到功能权限就能看全部知识
   const aclFilter = buildKnowledgeReadFilter(user, 'ke');
@@ -52,11 +78,11 @@ export async function GET(req: NextRequest) {
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset)) as any[];
 
-  // Parse tags JSON
-  const parsed = items.map(item => ({
+  // Parse tags：join 表优先，回落老 JSON 列（P3 双写过渡期）
+  const parsed = await Promise.all(items.map(async item => ({
     ...item,
-    tags: (() => { try { return JSON.parse(item.tags); } catch { return []; } })(),
-  }));
+    tags: await readKnowledgeTags(db as any, Number(item.id), item.tags),
+  })));
 
   return NextResponse.json({ items: parsed, total, page, pageSize });
 }
@@ -102,5 +128,10 @@ export async function POST(req: NextRequest) {
     user.id
   ));
 
-  return NextResponse.json({ success: true, id: result.lastInsertRowid });
+  // 标签写 join 表（P3）。上面的 JSON 列也照旧写 —— 双写过渡，
+  // 因为老数据全在 JSON 里且前端多处直接读 item.tags。
+  const newId = Number(result.lastInsertRowid);
+  const savedTags = await syncKnowledgeTags(db as any, newId, tags);
+
+  return NextResponse.json({ success: true, id: newId, tags: savedTags });
 }
