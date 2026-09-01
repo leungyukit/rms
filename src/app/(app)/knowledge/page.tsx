@@ -13,8 +13,19 @@ export default function KnowledgePage() {
   const [keyword, setKeyword] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ title: '', question: '', answer: '', category: '', type: 'faq', tags: '' });
+  const [createForm, setCreateForm] = useState({ title: '', question: '', answer: '', category: '', category_id: '', type: 'faq', tags: '' });
+
+  // 分类树只需拉一次（P3）。受限分类后端已过滤，这里拿到的就是可见集。
+  useEffect(() => {
+    fetch('/api/knowledge/categories')
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => setCategories(d.items || []))
+      .catch(() => setCategories([]));
+  }, []);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -22,6 +33,9 @@ export default function KnowledgePage() {
     if (keyword) params.set('keyword', keyword);
     if (filterType) params.set('type', filterType);
     if (filterStatus) params.set('status', filterStatus);
+    // 分类按子树过滤，标签走归一化键（P3）
+    if (filterCategoryId) params.set('category_id', filterCategoryId);
+    if (filterTag.trim()) params.set('tag', filterTag.trim());
     const res = await fetch(`/api/knowledge?${params}`);
     const data = await res.json();
     setItems(data.items || []);
@@ -29,7 +43,7 @@ export default function KnowledgePage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchItems(); }, [keyword, filterType, filterStatus]);
+  useEffect(() => { fetchItems(); }, [keyword, filterType, filterStatus, filterCategoryId, filterTag]);
 
   const handleCreate = async () => {
     if (!createForm.title || !createForm.question || !createForm.answer) return alert('请填写标题、问题和解答');
@@ -38,16 +52,22 @@ export default function KnowledgePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...createForm,
+        category_id: createForm.category_id === '' ? null : Number(createForm.category_id),
         tags: createForm.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean),
       }),
     });
     const data = await res.json();
     if (data.success) {
       setShowCreate(false);
-      setCreateForm({ title: '', question: '', answer: '', category: '', type: 'faq', tags: '' });
+      setCreateForm({ title: '', question: '', answer: '', category: '', category_id: '', type: 'faq', tags: '' });
       fetchItems();
+    } else {
+      alert(data.error || '创建失败');
     }
   };
+
+  // path 物料路径 /1/4/9/ → 层级，用于下拉框缩进
+  const depthOf = (path: string) => (!path ? 0 : Math.max(0, path.split('/').filter(Boolean).length - 1));
 
   const typeBadge = (t: string) => {
     const m: Record<string, string> = { faq: 'badge-info', solution: 'badge-success', lesson: 'badge-warning', pattern: 'badge-primary' };
@@ -68,6 +88,8 @@ export default function KnowledgePage() {
       <div className="flex gap-2 mb-4">
         <Link href="/knowledge/graph" className="btn btn-primary">🕸️ 知识图谱</Link>
         <Link href="/knowledge/insights" className="btn btn-secondary">💡 知识洞察</Link>
+        <Link href="/knowledge/categories" className="btn btn-secondary">🗂️ 分类管理</Link>
+        <Link href="/knowledge/capture-tasks" className="btn btn-secondary">📥 沉淀待办</Link>
         <div className="flex-1" />
         <button onClick={() => setShowCreate(true)} className="btn btn-primary">➕ 新建知识</button>
       </div>
@@ -86,6 +108,27 @@ export default function KnowledgePage() {
             <option value="published">已发布</option><option value="draft">草稿</option>
             <option value="archived">已归档</option>
           </select>
+          {categories.length > 0 && (
+            <select value={filterCategoryId} onChange={e => setFilterCategoryId(e.target.value)} className="form-input" title="按分类筛选（含子分类）">
+              <option value="">全部分类</option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{'　'.repeat(depthOf(c.path))}{c.name}</option>
+              ))}
+            </select>
+          )}
+          <input
+            type="text"
+            placeholder="🏷️ 按标签筛选"
+            value={filterTag}
+            onChange={e => setFilterTag(e.target.value)}
+            className="form-input w-40"
+          />
+          {(filterCategoryId || filterTag || filterType || filterStatus || keyword) && (
+            <button
+              onClick={() => { setKeyword(''); setFilterType(''); setFilterStatus(''); setFilterCategoryId(''); setFilterTag(''); }}
+              className="btn btn-sm btn-secondary"
+            >清空筛选</button>
+          )}
         </div>
       </div></div>
 
@@ -160,7 +203,16 @@ export default function KnowledgePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="form-label">分类</label>
-                  <input value={createForm.category} onChange={e => setCreateForm({ ...createForm, category: e.target.value })} className="form-input" placeholder="如：技术问题" />
+                  {categories.length > 0 ? (
+                    <select value={createForm.category_id} onChange={e => setCreateForm({ ...createForm, category_id: e.target.value })} className="form-input">
+                      <option value="">（不归类）</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>{'　'.repeat(depthOf(c.path))}{c.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={createForm.category} onChange={e => setCreateForm({ ...createForm, category: e.target.value })} className="form-input" placeholder="如：技术问题" />
+                  )}
                 </div>
                 <div>
                   <label className="form-label">标签</label>

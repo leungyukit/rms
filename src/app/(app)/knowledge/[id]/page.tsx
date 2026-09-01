@@ -14,6 +14,13 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ id: 
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
 
+  // 版本历史（P4）
+  const [versions, setVersions] = useState<any[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
+  const [vLoading, setVLoading] = useState(false);
+  const [diff, setDiff] = useState<{ version: number; rows: any[] } | null>(null);
+  const [snapshot, setSnapshot] = useState<any>(null);
+
   useEffect(() => {
     // 修复（2026-08-31）：原来无 r.ok 检查也无 catch，401/500 时 setLoading(false)
     // 永远不执行 → 页面永久卡在「加载中...」，不报错也不跳登录。
@@ -47,6 +54,59 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ id: 
       setEditing(false);
       const refreshed = await fetch(`/api/knowledge/${id}`);
       setEntry(await refreshed.json());
+      // 保存会自动产生新版本（P4），开着面板就同步刷一下
+      if (showVersions) loadVersions();
+    }
+  };
+
+  const loadVersions = async () => {
+    setVLoading(true);
+    try {
+      const res = await fetch(`/api/knowledge/${id}/versions`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setVersions(data.items || []);
+    } catch {
+      setVersions([]);
+    } finally {
+      setVLoading(false);
+    }
+  };
+
+  const toggleVersions = () => {
+    const next = !showVersions;
+    setShowVersions(next);
+    if (next && versions.length === 0) loadVersions();
+  };
+
+  const loadDiff = async (versionNo: number) => {
+    const res = await fetch(`/api/knowledge/${id}/versions?diff=${versionNo}`);
+    if (!res.ok) return alert('获取差异失败');
+    const data = await res.json();
+    setDiff({ version: versionNo, rows: data.diffs || [] });
+  };
+
+  const loadSnapshot = async (versionNo: number) => {
+    const res = await fetch(`/api/knowledge/${id}/versions/${versionNo}`);
+    if (!res.ok) return alert('获取版本失败');
+    setSnapshot(await res.json());
+  };
+
+  const rollback = async (versionNo: number) => {
+    // 回滚本身也会存一个新版本（P4），所以不会丢现状 —— 说清楚让人敲定心
+    if (!confirm(`回滚到 v${versionNo}？\n当前内容会先存成一个新版本，不会丢。`)) return;
+    const res = await fetch(`/api/knowledge/${id}/versions/${versionNo}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      setSnapshot(null);
+      setDiff(null);
+      const refreshed = await fetch(`/api/knowledge/${id}`);
+      const fresh = await refreshed.json();
+      setEntry(fresh);
+      setEditForm({ title: fresh.title, question: fresh.question, answer: fresh.answer, category: fresh.category, type: fresh.type, tags: (fresh.tags || []).join(', ') });
+      loadVersions();
+    } else {
+      alert(data.error || '回滚失败');
     }
   };
 
@@ -151,6 +211,43 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
+      {/* 版本历史（P4） */}
+      <div className="card mb-4">
+        <div className="card-body">
+          <div className="flex items-center justify-between">
+            <h2 className="card-title mb-0">🕘 版本历史</h2>
+            <button onClick={toggleVersions} className="btn btn-sm btn-secondary">
+              {showVersions ? '收起' : '展开'}
+            </button>
+          </div>
+
+          {showVersions && (
+            vLoading ? (
+              <div className="text-center py-6 text-gray-400">加载中...</div>
+            ) : versions.length === 0 ? (
+              <p className="text-sm text-gray-400 mt-3">还没有历史版本。每次保存修改都会自动生成一个快照。</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {versions.map(v => (
+                  <div key={v.id} className="flex items-center gap-3 text-sm border-b border-[var(--border-c)] pb-2 last:border-0">
+                    <span className="badge badge-gray">v{v.version_no}</span>
+                    <span className="flex-1 min-w-0 truncate text-gray-800">{v.title || '(无标题)'}</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{v.change_summary}</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{v.changed_by_name || '—'}</span>
+                    <span className="text-xs text-gray-400 whitespace-nowrap">{v.changed_at}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => loadDiff(v.version_no)} className="btn btn-sm btn-secondary">对比</button>
+                      <button onClick={() => loadSnapshot(v.version_no)} className="btn btn-sm btn-secondary">查看</button>
+                      <button onClick={() => rollback(v.version_no)} className="btn btn-sm btn-primary">回滚</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
       {/* Actions */}
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
@@ -171,6 +268,75 @@ export default function KnowledgeDetailPage({ params }: { params: Promise<{ id: 
           )}
         </div>
       </div>
+
+      {/* 版本对比 */}
+      {diff && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setDiff(null)}>
+          <div className="card" style={{ width: 640, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="card-body">
+              <h3 className="card-title">v{diff.version} 与当前内容的差异</h3>
+              {diff.rows.length === 0 ? (
+                <p className="text-sm text-gray-500">没有差异 —— 该版本与当前内容一致。</p>
+              ) : (
+                <div className="space-y-3">
+                  {diff.rows.map((d: any, i: number) => (
+                    <div key={i}>
+                      <div className="text-xs font-medium text-gray-500 mb-1">{d.field}</div>
+                      <div className="text-sm bg-[var(--bg-c)] p-2 rounded border border-[var(--border-c)] mb-1">
+                        <span className="text-xs text-gray-400 mr-2">v{diff.version}</span>
+                        <span className="whitespace-pre-wrap text-gray-700">{Array.isArray(d.from) ? d.from.join(', ') : String(d.from ?? '(空)')}</span>
+                      </div>
+                      <div className="text-sm bg-[var(--bg-c)] p-2 rounded border border-[var(--border-c)]">
+                        <span className="text-xs text-gray-400 mr-2">当前</span>
+                        <span className="whitespace-pre-wrap text-gray-900">{Array.isArray(d.to) ? d.to.join(', ') : String(d.to ?? '(空)')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+                <button onClick={() => setDiff(null)} className="btn btn-secondary">关闭</button>
+                <button onClick={() => rollback(diff.version)} className="btn btn-primary">回滚到 v{diff.version}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 版本快照全文 */}
+      {snapshot && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSnapshot(null)}>
+          <div className="card" style={{ width: 640, maxWidth: '92vw', maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="card-body">
+              <h3 className="card-title">v{snapshot.version_no} 快照</h3>
+              <p className="text-xs text-gray-400 mb-3">
+                {snapshot.change_summary} · {snapshot.changed_by_name || '—'} · {snapshot.changed_at}
+              </p>
+              <div className="space-y-3 text-sm">
+                <div><div className="text-xs text-gray-500 mb-1">标题</div><div className="text-gray-900 font-medium">{snapshot.title}</div></div>
+                <div><div className="text-xs text-gray-500 mb-1">问题</div><div className="text-gray-800 whitespace-pre-wrap">{snapshot.question}</div></div>
+                <div><div className="text-xs text-gray-500 mb-1">解答</div><div className="text-gray-800 whitespace-pre-wrap">{snapshot.answer}</div></div>
+                <div className="flex gap-4">
+                  <div><div className="text-xs text-gray-500 mb-1">分类</div><div className="text-gray-700">{snapshot.category || '—'}</div></div>
+                  <div><div className="text-xs text-gray-500 mb-1">状态</div><div className="text-gray-700">{snapshot.status}</div></div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">标签</div>
+                  <div className="flex flex-wrap gap-1">
+                    {(snapshot.tags || []).length === 0
+                      ? <span className="text-gray-400">—</span>
+                      : snapshot.tags.map((t: string, i: number) => <span key={i} className="badge badge-gray">{t}</span>)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+                <button onClick={() => setSnapshot(null)} className="btn btn-secondary">关闭</button>
+                <button onClick={() => rollback(snapshot.version_no)} className="btn btn-primary">回滚到此版本</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

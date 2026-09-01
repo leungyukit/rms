@@ -83,6 +83,8 @@ const KNOWLEDGE_ITEMS = [
   { href: '/knowledge', icon: '📚', label: 'nav.knowledge' },
   { href: '/knowledge/graph', icon: '🕸️', label: 'knowledge.graph' },
   { href: '/knowledge/insights', icon: '💡', label: 'knowledge.insights' },
+  { href: '/knowledge/categories', icon: '🗂️', label: '分类管理' },
+  { href: '/knowledge/capture-tasks', icon: '📥', label: '沉淀待办' },
 ];
 
 const ADMIN_ITEMS = [
