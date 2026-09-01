@@ -15,7 +15,13 @@
 
   /* Primary = Supabase green (#24B47E darker for light bg) */
   --primary-c: #24B47E;
-  --primary-fg: #FFFFFF;
+  /* 绿底按钮用深色文字，不用白字。
+     实测：#FFFFFF on #24B47E 只有 2.66:1，WCAG AA 要 4.5 —— 白字绿底是真看不清，
+     不是“风格选择”。Supabase 自己的主按钮也是绿底 + 深色字。 */
+  --primary-fg: #04231A;
+  /* 品牌绿当「文字/链接」时必须另取一档更深的。
+     同一个色做底色够醒目、做文字就不够对比 —— 这是两个不同用途，不能共用一个 token。 */
+  --primary-text: #0C7A50;
 
   /* Secondary = light gray chip */
   --secondary: #EDEDED;
@@ -32,6 +38,8 @@
   /* Destructive = soft red */
   --destructive: #E5484D;
   --destructive-fg: #FFFFFF;
+  /* 同理：#E5484D 做底色 OK，做文字在白底上只 3.91:1 */
+  --destructive-text: #C62A30;
 
   /* 甘特图状态色：绿色饱和度梯度承载「推进程度」
      不用 7 个随机色相 —— 那样只能区分状态，看不出进度。
@@ -39,7 +47,7 @@
   --status-idle-bg: #F5F5F5;      --status-idle-ac: #A3A3A3;  --status-idle-fg: #525252;
   --status-queued-bg: #EDEDED;    --status-queued-ac: #737373; --status-queued-fg: #404040;
   --status-sched-bg: #DCF5E9;     --status-sched-ac: #24B47E;  --status-sched-fg: #146B4A;
-  --status-active-bg: #24B47E;    --status-active-ac: #14804F; --status-active-fg: #FFFFFF;
+  --status-active-bg: #24B47E;    --status-active-ac: #14804F; --status-active-fg: #04231A;
   --status-done-bg: #D6F0E4;      --status-done-ac: #1A9068;   --status-done-fg: #115E43;
   --status-closed-bg: #E8EDEA;    --status-closed-ac: #8AA398; --status-closed-fg: #55665D;
   /* 优先级保留红/橙/绿做强对比标记 */
@@ -95,19 +103,22 @@
   --popover: #232323;
 
   --primary-c: #3ECF8E;
-  --primary-fg: #FFFFFF;
+  --primary-fg: #06281B;
+  /* 深色底下品牌绿本身就够亮（8.54:1），文字色直接用它 */
+  --primary-text: #3ECF8E;
 
   --secondary: #2A2A2A;
   --secondary-fg: #EDEDED;
 
   --muted: #232323;
-  --muted-fg: #737373;
+  --muted-fg: #8F8F8F;
 
   --accent: #3E9BCF;
   --accent-fg: #FFFFFF;
 
   --destructive: #F87171;
-  --destructive-fg: #FFFFFF;
+  --destructive-fg: #2A0A0A;
+  --destructive-text: #F87171;
 
   /* 甘特图状态色（深色）：原本 7 块浅色 pastel 贴在 #1C1C1C 上是一排刺眼亮斑，
      这里全部压暗，只让「处理中」用亮绿实心跳出来 */
@@ -410,7 +421,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 .btn-link {
   background: transparent;
-  color: var(--primary-c);
+  color: var(--primary-text);
   text-decoration: none;
   height: auto;
   padding: 0;
@@ -487,7 +498,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
   margin-bottom: 0.375rem;
 }
 .form-desc { font-size: 0.8125rem; font-weight: 400; color: var(--muted-fg); margin-top: 0.25rem; }
-.form-error { font-size: 0.8125rem; font-weight: 500; color: var(--destructive); margin-top: 0.25rem; }
+.form-error { font-size: 0.8125rem; font-weight: 500; color: var(--destructive-text); margin-top: 0.25rem; }
 
 /* ── Badges ──────────────────────── */
 .badge {
@@ -618,7 +629,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
   color: var(--muted-fg);
   margin: 0.75em 0;
 }
-.md-content a { color: var(--primary-c); text-decoration: none; font-weight: 500; }
+.md-content a { color: var(--primary-text); text-decoration: none; font-weight: 500; }
 .md-content a:hover { text-decoration: underline; }
 .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; letter-spacing: -0.02em; margin: 1em 0 0.4em; }
 .md-content h1 { font-size: 1.375rem; }
@@ -671,7 +682,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
 .chat-markdown table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8125rem; width: 100%; }
 .chat-markdown th, .chat-markdown td { border: 1px solid var(--border-c); padding: 0.375rem 0.625rem; text-align: left; }
 .chat-markdown th { background: var(--muted); color: var(--muted-fg); font-weight: 600; }
-.chat-markdown a { color: var(--primary-c); text-decoration: none; font-weight: 500; }
+.chat-markdown a { color: var(--primary-text); text-decoration: none; font-weight: 500; }
 .chat-markdown a:hover { text-decoration: underline; }
 
 /* ── Gantt Chart ──────────────────── */
@@ -866,7 +877,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
 /* ── Semantic text colors ──────────── */
 .text-red-500, .text-red-600, .text-red-700, .text-red-800 { color: #EF4444 !important; }
 .text-red-400 { color: #F87171 !important; }
-.text-green-500, .text-green-600, .text-green-700 { color: var(--primary-c) !important; }
+.text-green-500, .text-green-600, .text-green-700 { color: var(--primary-text) !important; }
 .text-green-800 { color: #16A34A !important; }
 .text-blue-600, .text-blue-700 { color: #2563EB !important; }
 .text-blue-500 { color: #3B82F6 !important; }
@@ -877,7 +888,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
 
 [data-theme="dark"] .text-red-500, [data-theme="dark"] .text-red-600, [data-theme="dark"] .text-red-700, [data-theme="dark"] .text-red-800 { color: #F87171 !important; }
 [data-theme="dark"] .text-red-400 { color: #FCA5A5 !important; }
-[data-theme="dark"] .text-green-500, [data-theme="dark"] .text-green-600, [data-theme="dark"] .text-green-700 { color: var(--primary-c) !important; }
+[data-theme="dark"] .text-green-500, [data-theme="dark"] .text-green-600, [data-theme="dark"] .text-green-700 { color: var(--primary-text) !important; }
 [data-theme="dark"] .text-blue-600, [data-theme="dark"] .text-blue-700 { color: #60A5FA !important; }
 [data-theme="dark"] .text-orange-500, [data-theme="dark"] .text-orange-600, [data-theme="dark"] .text-orange-700, [data-theme="dark"] .text-orange-800 { color: #FB923C !important; }
 [data-theme="dark"] .text-purple-600, [data-theme="dark"] .text-purple-700, [data-theme="dark"] .text-purple-800 { color: #A855F7 !important; }
@@ -948,7 +959,7 @@ input[type="checkbox"].form-input, input[type="radio"].form-input {
 /* Deliberately NOT setting a global link color: many <Link> elements in the
    63 tsx files wrap whole cards/rows/logos, so a blanket color would leak.
    Tailwind preflight already gives `color: inherit`. Only opt-in helpers here. */
-a.link, .md-content a, .chat-markdown a { color: var(--primary-c); text-decoration: none; }
+a.link, .md-content a, .chat-markdown a { color: var(--primary-text); text-decoration: none; }
 a.link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Modal / overlay ────────────── */
