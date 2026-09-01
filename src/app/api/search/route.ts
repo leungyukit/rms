@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb, isMysqlEnabled } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
-import { ensureFtsIndexes, highlight, escapeFts } from '@/lib/fts-migrations';
+import { ensureFtsIndexes, highlight, escapeFts, escapeFtsMySQL } from '@/lib/fts-migrations';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 import { buildKnowledgeReadFilter } from '@/lib/knowledge-acl';
 
@@ -10,13 +10,16 @@ export const dynamic = 'force-dynamic';
 interface Hit { type: string; id: number; title: string; snippet: string; score: number; [k: string]: any; }
 
 /**
- * bigram 噪音过滤
+ * bigram 噪音过滤（仅用于非精确匹配路径）
  *
- * ngram 分词把「需求池」切成「需求」+「求池」，只命中其中一个 bigram 的条目
- * 也会进结果集。实测搜「需求池」召回 5 条，最高分 10.9，后 4 条 0.83 且完全不相关。
+ * 历史背景：MySQL 原本用 NATURAL LANGUAGE MODE，ngram 把「需求池」切成
+ * 「需求」+「求池」再 OR，实测搜「需求池」返 17 条而真正包含的只有 1 条。
+ * 当时只能用「相对最高分比例」做事后降噪。
  *
- * 用「相对最高分」而非绝对阈值：FULLTEXT 分数随语料规模浮动，
- * 写死一个数字换个库就失效。
+ * 现在 MySQL 改用 BOOLEAN MODE 短语匹配（+"需求池"），从源头保证精度，
+ * 该路径下不再降噪 —— 短语模式下低分命中也是真命中，
+ * 再按比例砍就变成误杀（长文档 vs 短标题的 TF-IDF 分差本来就大）。
+ * 仍保留给 SQLite 与 LIKE 兜底路径。
  */
 const RELEVANCE_RATIO = 0.12;
 
@@ -51,6 +54,13 @@ export async function GET(req: NextRequest) {
   const safeQ = escapeFts(q);
   const likeQ = `%${q}%`;
 
+  // MySQL BOOLEAN MODE 表达式。空串 = 查询全是单字符 token，
+  // ngram_token_size=2 根本没索引它们，必须走 LIKE（实测：搜「流」MATCH 0 条、LIKE 5 条）。
+  const boolQ = isMysql ? escapeFtsMySQL(q) : '';
+  // MySQL 且能用短语模式时，结果已经是精确的，不再比例降噪
+  const precise = isMysql && boolQ.length > 0;
+  const refine = <T extends { score?: number }>(rows: T[]): T[] => (precise ? rows : dropWeakHits(rows));
+
   // 分类级读权限（P2）。搜索是最容易漏的出口 —— 只挡列表页不挡搜索等于没挡。
   // 两个别名各算一次：MySQL 分支裸表无别名，SQLite 分支 JOIN 后用 k。
   const acl = buildKnowledgeReadFilter(user, '');
@@ -62,20 +72,28 @@ export async function GET(req: NextRequest) {
   if (type === 'all' || type === 'requirements') {
     let rows: any[] = [];
     if (isMysql) {
-      // MySQL FULLTEXT（ngram 模式自动按 2 字切分）
-      try {
-        rows = (await db.prepare(`
-          SELECT r.id, r.title, r.status, r.priority, r.description,
-            p.name as project_name, MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN NATURAL LANGUAGE MODE) as score
-          FROM requirements r
-          LEFT JOIN projects p ON p.id = r.project_id
-          WHERE MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN NATURAL LANGUAGE MODE)
-            AND r.merged_into IS NULL
-          ORDER BY score DESC
-          LIMIT ?
-        `).all(q, q, limit)) as any[];
-      } catch (e) {
-        // 兜底 LIKE
+      // MySQL FULLTEXT BOOLEAN MODE 短语匹配。
+      // 原先用 NATURAL LANGUAGE MODE，ngram 把多字词切成 bigram 再 OR，
+      // 实测搜「需求池」返 17 条而真含的只 1 条；改 +"需求池" 后精确为 1 条。
+      // boolQ 为空（查询全是单字）时直接走 LIKE，ngram 没索引单字。
+      if (boolQ) {
+        try {
+          rows = (await db.prepare(`
+            SELECT r.id, r.title, r.status, r.priority, r.description,
+              p.name as project_name, MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN BOOLEAN MODE) as score
+            FROM requirements r
+            LEFT JOIN projects p ON p.id = r.project_id
+            WHERE MATCH(r.title, r.description, r.business_unit, r.requester_name, r.benefit, r.solution) AGAINST (? IN BOOLEAN MODE)
+              AND r.merged_into IS NULL
+            ORDER BY score DESC
+            LIMIT ?
+          `).all(boolQ, boolQ, limit)) as any[];
+        } catch (e) {
+          rows = [];
+        }
+      }
+      // 单字查询或 FULLTEXT 无果：LIKE 兜底
+      if (rows.length === 0) {
         rows = (await db.prepare(`
           SELECT r.id, r.title, r.status, r.priority, r.description, p.name as project_name, 1 as score
           FROM requirements r LEFT JOIN projects p ON p.id=r.project_id
@@ -106,7 +124,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, limit)) as any[];
       }
     }
-    for (const r of dropWeakHits(rows).slice(0, limit)) {
+    for (const r of refine(rows).slice(0, limit)) {
       results.push({
         type: 'requirement',
         id: r.id,
@@ -125,14 +143,19 @@ export async function GET(req: NextRequest) {
   if (type === 'all' || type === 'knowledge') {
     let rows: any[] = [];
     if (isMysql) {
-      try {
-        rows = (await db.prepare(`
-          SELECT id, title, answer, category, tags, MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE) as score
-          FROM knowledge_entries
-          WHERE status='published' AND MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE)${aclSql}
-          ORDER BY score DESC LIMIT ?
-        `).all(q, q, ...acl.params, limit)) as any[];
-      } catch (e) {
+      if (boolQ) {
+        try {
+          rows = (await db.prepare(`
+            SELECT id, title, answer, category, tags, MATCH(title, question, answer, category, tags) AGAINST (? IN BOOLEAN MODE) as score
+            FROM knowledge_entries
+            WHERE status='published' AND MATCH(title, question, answer, category, tags) AGAINST (? IN BOOLEAN MODE)${aclSql}
+            ORDER BY score DESC LIMIT ?
+          `).all(boolQ, boolQ, ...acl.params, limit)) as any[];
+        } catch (e) {
+          rows = [];
+        }
+      }
+      if (rows.length === 0) {
         rows = (await db.prepare(`
           SELECT id, title, answer, category, tags, 1 as score
           FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)${aclSql}
@@ -157,7 +180,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, ...acl.params, limit)) as any[];
       }
     }
-    for (const r of dropWeakHits(rows).slice(0, limit)) {
+    for (const r of refine(rows).slice(0, limit)) {
       results.push({
         type: 'knowledge',
         id: r.id,
@@ -175,14 +198,19 @@ export async function GET(req: NextRequest) {
   if (type === 'all' || type === 'projects') {
     let rows: any[] = [];
     if (isMysql) {
-      try {
-        rows = (await db.prepare(`
-          SELECT id, name, description, MATCH(name, description) AGAINST (? IN NATURAL LANGUAGE MODE) as score
-          FROM projects
-          WHERE MATCH(name, description) AGAINST (? IN NATURAL LANGUAGE MODE)
-          ORDER BY score DESC LIMIT ?
-        `).all(q, q, limit)) as any[];
-      } catch (e) {
+      if (boolQ) {
+        try {
+          rows = (await db.prepare(`
+            SELECT id, name, description, MATCH(name, description) AGAINST (? IN BOOLEAN MODE) as score
+            FROM projects
+            WHERE MATCH(name, description) AGAINST (? IN BOOLEAN MODE)
+            ORDER BY score DESC LIMIT ?
+          `).all(boolQ, boolQ, limit)) as any[];
+        } catch (e) {
+          rows = [];
+        }
+      }
+      if (rows.length === 0) {
         rows = (await db.prepare(`
           SELECT id, name, description, 1 as score FROM projects
           WHERE name LIKE ? OR description LIKE ? LIMIT ?
@@ -203,7 +231,7 @@ export async function GET(req: NextRequest) {
         `).all(likeQ, likeQ, limit)) as any[];
       }
     }
-    for (const r of dropWeakHits(rows).slice(0, limit)) {
+    for (const r of refine(rows).slice(0, limit)) {
       results.push({
         type: 'project',
         id: r.id,

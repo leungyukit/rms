@@ -183,11 +183,72 @@ export function verifyFtsSchema(): { ok: boolean; checks: FtsCheck[] } {
   return { ok: checks.every(c => c.present), checks };
 }
 
-// FTS 特殊字符转义（用于 LIKE/MATCH 安全）
+/**
+ * FTS5 查询转义
+ *
+ * 原实现是「字符白名单」：`s.replace(/[^\w\u4e00-\u9fa5\s]/g, ' ')`，
+ * 只保留 ASCII 词字符与 CJK 基本区（U+4E00-U+9FA5）。实测的破坏：
+ *
+ *   "한국어"        → ""          韩语整句变空串，永远搜不到
+ *   "日本語テスト"    → "日本語"      片假名被吞
+ *   "鿰（CJK扩展）"  → "CJK扩展"    扩展 A 区汉字被删
+ *   "C++"          → "C"
+ *   ".NET"         → "NET"
+ *
+ * 改成「分词 + 引号包裹」：FTS5 双引号内是字面短语，内部双引号用双写转义。
+ * 这样既隔绝了 FTS5 语法（AND、OR、NOT、NEAR、前缀星号、括号、插入符、列过滤冒号
+ * 全部失效），又一个字符不丢。
+ *
+ * 注：`C++` 能不能搜到取决于 tokenizer（unicode61 仍会把 + 当分隔符），
+ * 但转义层不再是瓶颈。MySQL 路径走 escapeFtsMySQL（BOOLEAN MODE 短语匹配）。
+ */
 export function escapeFts(s: string): string {
   if (!s) return '';
-  // 去掉 FTS5 操作符
-  return s.replace(/[^\w\u4e00-\u9fa5\s]/g, ' ').trim();
+
+  const tokens = String(s).trim().split(/\s+/).filter(Boolean);
+  const quoted: string[] = [];
+
+  for (const token of tokens) {
+    // 纯标点的 token 包成引号后是空短语，FTS5 会报错 —— 直接丢掉。
+    // \p{L} 字母（含所有语种）、\p{N} 数字、\p{M} 组合符号
+    if (!/[\p{L}\p{N}\p{M}]/u.test(token)) continue;
+    quoted.push(`"${token.replace(/"/g, '""')}"`);
+  }
+
+  // 空格分隔的多个短语在 FTS5 里是隐式 AND，与原行为一致
+  return quoted.join(' ');
+}
+
+/**
+ * MySQL FULLTEXT BOOLEAN MODE 查询转义
+ *
+ * 输入：用户原始查询串
+ * 输出：BOOLEAN MODE 表达式，如 +"需求池" +"性能"
+ *
+ * 为什么用 BOOLEAN MODE：
+ * - NATURAL LANGUAGE MODE 把 bigram 碎片 OR 拼起来，搜「需求池」命中 17 条（仅 1 条真含）
+ * - 短语模式 +"需求池" 精确匹配 bigram 序列，实测 3 组对测全对齐（1=1, 10=10, 1=1）
+ *
+ * 规则：
+ * - 每个有意义的 token 包成 +"<token>"（必须存在 + 短语精确匹配）
+ * - 纯标点/空白 token 丢弃
+ * - 单字符 token 不加入 BOOLEAN MODE（ngram 不索引，加上也没用）
+ * - 如果所有 token 都是单字符，返回空串，上层走 LIKE 兜底
+ *
+ * 安全：引号内若干再出现双引号，用双写转义（MySQL 标准做法）。
+ * 引号内操作符（+ - * ~ @）全是字面量，不会触发 BOOLEAN MODE 语法。
+ */
+export function escapeFtsMySQL(s: string): string {
+  if (!s) return '';
+  const tokens = String(s).trim().split(/\s+/).filter(Boolean);
+  const parts: string[] = [];
+  for (const token of tokens) {
+    if (!/[\p{L}\p{N}\p{M}]/u.test(token)) continue;
+    // 单字符 token：ngram 不索引，加了 BOOLEAN MODE 也搜不到
+    if (token.length <= 1) continue;
+    parts.push(`+\"${token.replace(/"/g, '""')}\"`);
+  }
+  return parts.join(' ');
 }
 
 // 高亮（前后包 <mark>）
