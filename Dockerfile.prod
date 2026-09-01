@@ -1,0 +1,164 @@
+# =============================================================================
+# RMS 生产镜像（多阶段，Next.js standalone）
+# =============================================================================
+# 2026-09-01 新增。
+#
+# 为什么不用仓库根目录那个 Dockerfile：
+#   那个是 all-in-one（单容器塞 MariaDB + Memcached + RMS + OpenClaw），
+#   而 115.159.101.63 上跑的是 docker-compose 多容器分离架构
+#   （rms-app / rms-mysql / rms-memcached / rms-nginx / rms-openclaw），
+#   数据库是 MySQL 8.0 独立容器。两者结构完全不同。
+#
+#   更要紧的是 all-in-one 用 MariaDB 11，而 MariaDB 不支持 `WITH PARSER ngram`
+#   —— 那正是 P1/P5 中文全文检索的核心。用它等于把检索功能废掉。
+#
+# 本文件按线上 rms-prod:latest 的实际结构复刻（用 docker history 反推）：
+#   node:24 / WORKDIR /app / USER node / tini 作 init / CMD node server.js
+#
+# 构建：
+#   docker build -f Dockerfile.prod -t rms-prod:$(date +%Y%m%d-%H%M) .
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: 依赖安装（单独一层，package.json 不变时可复用缓存）
+# ---------------------------------------------------------------------------
+FROM docker.1ms.run/node:24-bookworm-slim AS deps
+
+WORKDIR /app
+
+# better-sqlite3 / deasync 是原生模块，需要编译工具链。
+# 虽然生产走 MySQL，但代码里 SQLite 分支仍会 require，装不上会启动即崩。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json* ./
+RUN npm ci --include=dev
+
+# ---------------------------------------------------------------------------
+# Stage 2: 构建
+# ---------------------------------------------------------------------------
+FROM deps AS builder
+
+WORKDIR /app
+COPY . .
+
+# postbuild.sh 会给 standalone 建软链（.next/static、data、public/uploads）——
+# 那是给宿主机 systemd 部署用的。容器里 data 与 uploads 是挂载卷，
+# .next/static 由下面显式 COPY，再建软链只会打架。所以显式跳过。
+ENV RMS_SKIP_POSTBUILD_LINKS=1
+ENV NEXT_TELEMETRY_DISABLED=1
+# 2C3.5G 的小机器上构建容易 OOM；给 node 放宽堆上限（本机构建也无害）
+ENV NODE_OPTIONS=--max-old-space-size=2048
+
+RUN npm run build
+
+# standalone 产物路径归一化。
+#
+# ❗这里踩过一个坑（2026-09-01）：原先写的是
+#     find .next/standalone -name server.js -print -quit
+# 它取「第一个」匹配，而遍历时会先撞上
+#     .next/standalone/node_modules/next/server.js
+# 于是把 next 这个 npm 包当成了 standalone 根，把真产物删掉替成了 next 包。
+# 更阴的是后面那句 test -f server.js 还能通过（next 包也有同名文件），
+# 所以它“假装成功”了 —— 直到下一阶段报 mysql2 缺失才暴露。
+# 又一次印证：能跑通的断言不等于断言对。
+#
+# 两个修正：① 优先直接判预期路径，命中就不动；
+#           ② fallback 必须排除 node_modules。
+RUN set -eux; \
+    if [ -f .next/standalone/server.js ] && [ -d .next/standalone/.next ]; then \
+      echo "standalone 已在预期位置，无需归一"; \
+    else \
+      hit="$(find .next/standalone -maxdepth 6 -name server.js -not -path '*/node_modules/*' -print -quit)"; \
+      test -n "$hit" || { echo '[FATAL] 找不到 standalone 的 server.js' >&2; exit 1; }; \
+      SA="$(dirname "$hit")"; \
+      echo "standalone 实际位置: $SA，归一到 .next/standalone/"; \
+      mkdir -p /tmp/sa && cp -a "$SA/." /tmp/sa/; \
+      rm -rf .next/standalone; mkdir -p .next/standalone; \
+      cp -a /tmp/sa/. .next/standalone/; rm -rf /tmp/sa; \
+    fi; \
+    test -f .next/standalone/server.js; \
+    test -d .next/standalone/node_modules/mysql2 \
+      || { echo '[FATAL] 归一后的 standalone 里没有 mysql2，说明拿错了目录' >&2; ls .next/standalone | head -20; exit 1; }; \
+    echo "standalone 归一完成（node_modules $(ls .next/standalone/node_modules | wc -l) 个包）"
+
+# ---------------------------------------------------------------------------
+# Stage 3: 运行时
+# ---------------------------------------------------------------------------
+FROM docker.1ms.run/node:24-bookworm-slim AS runtime
+
+# tini：Next.js standalone 直接 node server.js 没有 init 进程，
+# 信号处理和僵尸回收都缺，容器 stop 会走到强杀。
+# default-mysql-client：运维排障要能在容器里直接连库看数据。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates tini default-mysql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# mysql 客户端默认 charset 走 utf8mb4。
+# 2026-08-12 出过 latin1 客户端写坏中文的事故，服务端已加
+# --skip-character-set-client-handshake 兜底，客户端这边也钉死。
+RUN mkdir -p /etc/mysql/conf.d && \
+    printf '[client]\ndefault-character-set=utf8mb4\n\n[mysql]\ndefault-character-set=utf8mb4\n' \
+      > /etc/mysql/conf.d/zz-utf8mb4.cnf
+
+ENV NODE_ENV=production \
+    PORT=3800 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1 \
+    TZ=Asia/Shanghai
+
+WORKDIR /app
+
+# standalone 自带精简版 node_modules 与 server.js
+COPY --from=builder /app/.next/standalone/ ./
+# 静态产物不在 standalone 里，必须单独拷
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# next 的依赖 tracing 会把运行时需要的包打进 standalone/node_modules。
+# 原先这里手写了一长串 COPY --from=builder /app/node_modules/<pkg>，
+# 照着旧版 mysql2 的依赖表猜的，实测两个错误：
+#   · sqlstring / seq-queue 在当前依赖树里根本不存在 → COPY 直接让 build 失败
+#   · 反而漏了 iconv-lite / long / safer-buffer / sql-escaper
+# 实测 standalone 自带 306 个包（470M），mysql2、bcryptjs、deasync、memcache
+# 及其闭包全都在里面 —— 手工补拷完全多余。
+# 与其猜，不如显式断言：缺了就在构建期炸，别等运行期 500。
+# Next.js 的依赖 tracing 只把「静态分析得出」的包放进 standalone/node_modules
+# （实测容器内只有 30 个）。下面三个抓不到，必须手工补：
+#   · bcryptjs —— 登录验密码，运行期动态 require
+#   · deasync  —— 原生模块
+#   · memcache —— 缓存客户端
+# 线上 rms-prod 镜像也是这么单独拷的（docker history 反推），
+# 当时不知道为何，现在实测确认：真的不在 tracing 结果里。
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+COPY --from=builder /app/node_modules/deasync ./node_modules/deasync
+COPY --from=builder /app/node_modules/memcache ./node_modules/memcache
+
+# 运维/迁移脚本：容器里要能直接跑迁移和自检，
+# 否则每次都得另起一个装了 mysql2 的临时容器。
+COPY --from=builder /app/scripts ./scripts
+
+# 运行时自检：缺了就在构建期炸，别等运行期 500。
+# （这个断言今天拦下两次错误构建，别删。）
+RUN set -eux; \
+    for m in mysql2 bcryptjs deasync memcache iconv-lite long safer-buffer sql-escaper; do \
+      test -d "node_modules/$m" || { echo "[FATAL] 运行时依赖缺失: $m" >&2; exit 1; }; \
+    done; \
+    test -f server.js; \
+    test -d .next/static; \
+    echo "运行时自检通过（node_modules $(ls node_modules | wc -l) 个包）"
+
+# 这三个目录是挂载卷的挂载点，权限要给 node 用户，否则运行期写不进去
+RUN mkdir -p /app/data /app/public/uploads /app/logs && \
+    chown -R node:node /app/data /app/public/uploads /app/logs
+
+USER node
+
+EXPOSE 3800
+
+HEALTHCHECK --interval=30s --timeout=8s --start-period=45s --retries=4 \
+    CMD curl -fsS http://127.0.0.1:3800/login >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "server.js"]

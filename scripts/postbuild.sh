@@ -19,12 +19,35 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SA="$ROOT/.next/standalone/www/rms"
 
-if [ ! -f "$SA/server.js" ]; then
-  echo "[postbuild] 找不到 $SA/server.js —— standalone 构建产物缺失，中止" >&2
+# Docker 镜像构建时跳过软链（2026-09-01 新增）
+# 容器里 data/ 与 public/uploads 是挂载卷，.next/static 由 Dockerfile 显式 COPY，
+# 再建软链只会制造冲突。
+if [ "${RMS_SKIP_POSTBUILD_LINKS:-0}" = "1" ]; then
+  echo "[postbuild] RMS_SKIP_POSTBUILD_LINKS=1 —— 容器构建场景，跳过软链"
+  exit 0
+fi
+
+# standalone 产物路径不是固定的（2026-09-01 踩坑）：
+#   · 本机 58：.next/standalone/www/rms/   ← 仓库外层有多个 lockfile，
+#     Next.js 把 outputFileTracingRoot 推到了 /，产物带上完整路径前缀
+#   · Docker：.next/standalone/            ← WORKDIR=/app 单一 lockfile，无前缀
+# 原先写死前者，导致容器内 npm run build 在 postbuild 阶段 exit 1。改成动态定位。
+SA=""
+for cand in "$ROOT/.next/standalone/www/rms" "$ROOT/.next/standalone"; do
+  if [ -f "$cand/server.js" ]; then SA="$cand"; break; fi
+done
+if [ -z "$SA" ]; then
+  # 兜底：树里找第一个 server.js
+  found="$(find "$ROOT/.next/standalone" -maxdepth 4 -name server.js -print -quit 2>/dev/null || true)"
+  [ -n "$found" ] && SA="$(dirname "$found")"
+fi
+
+if [ -z "$SA" ] || [ ! -f "$SA/server.js" ]; then
+  echo "[postbuild] 在 $ROOT/.next/standalone 下找不到 server.js —— standalone 构建产物缺失，中止" >&2
   exit 1
 fi
+echo "[postbuild] standalone 目录：$SA"
 
 # link_dir <标准位置(主目录)> <standalone 侧路径>
 # 若 standalone 侧已是真目录，先把里面「更新的」文件回捞进主目录再替换成软链，
