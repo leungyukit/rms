@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser, hasFunctionalAccess } from '@/lib/auth';
+import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 
 // GET: list/search knowledge entries
 export async function GET(req: NextRequest) {
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
   const pageSize = parseInt(searchParams.get('pageSize') || '20');
   const offset = (page - 1) * pageSize;
 
+  ensureKnowledgeTables();
   const db = getAsyncDb();
   let where = ['1=1'];
   let params: any[] = [];
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title、question、answer 为必填项' }, { status: 400 });
   }
 
+  ensureKnowledgeTables();
   const db = getAsyncDb();
   const result = (await db.prepare(`
     INSERT INTO knowledge_entries (source_requirement_id, type, title, question, answer, category, tags, confidence, status, created_by)
@@ -80,7 +83,9 @@ export async function POST(req: NextRequest) {
     JSON.stringify(tags || []),
     confidence || 0.8,
     status || 'published',
-    `user:${user.id}`
+    // created_by 是 INT。原代码传 `user:${id}` 字符串，MySQL 严格模式下
+    // ERROR 1366 Incorrect integer value —— 知识条目一条都建不出来（实测表为空）。
+    user.id
   ));
 
   return NextResponse.json({ success: true, id: result.lastInsertRowid });

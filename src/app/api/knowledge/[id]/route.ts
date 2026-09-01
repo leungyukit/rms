@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
 
 // GET: single knowledge entry detail
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -9,6 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
   if (!/^\d+$/.test(id)) return NextResponse.json({ error: '无效的ID' }, { status: 400 });
+  ensureKnowledgeTables();
   const db = getAsyncDb();
 
   const entry = (await db.prepare(`
@@ -38,11 +40,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   entry.feedback = { useful: feedback?.useful || 0, not_useful: feedback?.not_useful || 0, total: feedback?.total || 0 };
 
   // Get related entries
+  // 列名以 DB 为准：knowledge_relations 用 source_id/target_id。
+  // 原代码写 source_entry_id/target_entry_id → ERROR 1054，详情页关联区 100% 500。
+  // 不改 DB 列名是因为 graph/route.ts 已在用 source_id/target_id，改库会弄坏知识地图。
   const related = (await db.prepare(`
     SELECT ke.id, ke.title, ke.type, ke.category, kr.relation_type, kr.weight
     FROM knowledge_relations kr
-    JOIN knowledge_entries ke ON (ke.id = kr.target_entry_id OR ke.id = kr.source_entry_id) AND ke.id != ?
-    WHERE kr.source_entry_id = ? OR kr.target_entry_id = ?
+    JOIN knowledge_entries ke ON (ke.id = kr.target_id OR ke.id = kr.source_id) AND ke.id != ?
+    WHERE kr.source_id = ? OR kr.target_id = ?
     ORDER BY kr.weight DESC
     LIMIT 10
   `).all(parseInt(id), parseInt(id), parseInt(id)));
@@ -57,7 +62,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
   const { id } = await params;
+  if (!/^\d+$/.test(id)) return NextResponse.json({ error: '无效的ID' }, { status: 400 });
   const body = await req.json();
+  ensureKnowledgeTables();
   const db = getAsyncDb();
 
   const existing = (await db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(parseInt(id))) as any;
@@ -94,10 +101,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
   const { id } = await params;
+  if (!/^\d+$/.test(id)) return NextResponse.json({ error: '无效的ID' }, { status: 400 });
+  ensureKnowledgeTables();
   const db = getAsyncDb();
 
   (await db.prepare('DELETE FROM knowledge_feedback WHERE entry_id = ?').run(parseInt(id)));
-  (await db.prepare('DELETE FROM knowledge_relations WHERE source_entry_id = ? OR target_entry_id = ?').run(parseInt(id), parseInt(id)));
+  (await db.prepare('DELETE FROM knowledge_relations WHERE source_id = ? OR target_id = ?').run(parseInt(id), parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_entries WHERE id = ?').run(parseInt(id)));
 
   return NextResponse.json({ success: true });

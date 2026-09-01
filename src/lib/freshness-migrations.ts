@@ -89,7 +89,15 @@ export function scanStaleEntries(opts: { thresholdMonths?: number; dryRun?: bool
     const effectiveThresholdDays = (e.useful_count || 0) >= 5 ? thresholdDays * 2 : thresholdDays;
     if (e.days_since_review <= effectiveThresholdDays) continue;
 
-    const assignedTo = e.created_by && e.created_by.startsWith('user:') ? parseInt(e.created_by.substring(5)) : 1;
+    // created_by 现为 INT（P0 修正）。旧数据可能残留 'user:N' 字符串，两种都容。
+    const rawCreator = e.created_by;
+    let assignedTo = 1;
+    if (typeof rawCreator === 'number' && rawCreator > 0) {
+      assignedTo = rawCreator;
+    } else if (typeof rawCreator === 'string') {
+      const parsed = parseInt(rawCreator.startsWith('user:') ? rawCreator.substring(5) : rawCreator, 10);
+      if (Number.isFinite(parsed) && parsed > 0) assignedTo = parsed;
+    }
     if (opts.dryRun) {
       details.push({ entry_id: e.id, title: e.title, days: Math.round(e.days_since_review), action: 'would_create_task' });
       continue;
