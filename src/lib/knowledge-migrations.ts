@@ -207,6 +207,95 @@ function fixAiReviewColumns() {
   createIndexIfMissing('knowledge_entries', 'idx_ke_ai_review', 'ai_generated, status');
 }
 
+/**
+ * 知识分类树 + 分类级 ACL
+ *
+ * 改造前知识库只有 hasFunctionalAccess() 一道粗门，拿到功能权限就能看全部知识，
+ * role_project_access 只管项目不管知识 —— 等于「进来即全见」。
+ *
+ * path 存物料路径（如 /1/4/9/），方便按子树查询而不用递归 CTE（兼容 MySQL 5.7）。
+ * is_restricted=1 的分类才需要显式 ACL 授权，详见 knowledge-acl.ts 的取舍说明。
+ */
+function createCategoryTables() {
+  const db = getDb();
+
+  if (isMysqlEnabled()) {
+    if (!mysqlTableExists('knowledge_categories')) {
+      db.exec(`
+        CREATE TABLE knowledge_categories (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          parent_id INT NULL,
+          path VARCHAR(500) NOT NULL DEFAULT '/',
+          description TEXT,
+          sort_order INT NOT NULL DEFAULT 0,
+          is_restricted TINYINT NOT NULL DEFAULT 0,
+          created_by INT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_kc_parent (parent_id),
+          KEY idx_kc_path (path),
+          KEY idx_kc_restricted (is_restricted)
+        )
+      `);
+    }
+    if (!mysqlTableExists('knowledge_category_acl')) {
+      db.exec(`
+        CREATE TABLE knowledge_category_acl (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          category_id INT NOT NULL,
+          role_name VARCHAR(50) NOT NULL,
+          can_read TINYINT NOT NULL DEFAULT 1,
+          can_write TINYINT NOT NULL DEFAULT 0,
+          can_manage TINYINT NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_kca (category_id, role_name),
+          KEY idx_kca_role (role_name, can_read)
+        )
+      `);
+    }
+  } else {
+    if (!sqliteTableExists('knowledge_categories')) {
+      db.exec(`
+        CREATE TABLE knowledge_categories (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          parent_id INTEGER,
+          path TEXT NOT NULL DEFAULT '/',
+          description TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          is_restricted INTEGER NOT NULL DEFAULT 0,
+          created_by INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_kc_parent ON knowledge_categories(parent_id);
+        CREATE INDEX IF NOT EXISTS idx_kc_path ON knowledge_categories(path);
+        CREATE INDEX IF NOT EXISTS idx_kc_restricted ON knowledge_categories(is_restricted);
+      `);
+    }
+    if (!sqliteTableExists('knowledge_category_acl')) {
+      db.exec(`
+        CREATE TABLE knowledge_category_acl (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category_id INTEGER NOT NULL,
+          role_name TEXT NOT NULL,
+          can_read INTEGER NOT NULL DEFAULT 1,
+          can_write INTEGER NOT NULL DEFAULT 0,
+          can_manage INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(category_id, role_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_kca_role ON knowledge_category_acl(role_name, can_read);
+      `);
+    }
+  }
+
+  // 知识条目挂到分类树；老 category 字符串列保留只读兼容，不删
+  addColumnIfMissing('knowledge_entries', 'category_id', 'INT NULL', 'INTEGER');
+  createIndexIfMissing('knowledge_entries', 'idx_ke_category_id', 'category_id');
+}
+
 // ---------- 入口 ----------
 
 export function ensureKnowledgeTables() {
@@ -217,6 +306,7 @@ export function ensureKnowledgeTables() {
   fixKnowledgeEntriesSchema();
   fixFreshnessColumns();
   fixAiReviewColumns();
+  createCategoryTables();
 
   ensured = true;
 }
@@ -250,7 +340,10 @@ const REQUIRED_COLUMNS: Array<[string, string]> = [
   ['knowledge_entries', 'source_job_id'],
   ['knowledge_entries', 'reviewed_by'],
   ['knowledge_entries', 'reviewed_at'],
+  ['knowledge_entries', 'category_id'],
 ];
+
+const REQUIRED_TABLES = ['knowledge_categories', 'knowledge_category_acl'];
 
 /** 逐项核对 P0 要求的 schema 是否真的落地了 */
 export function verifyKnowledgeSchema(): { ok: boolean; checks: SchemaCheck[] } {
@@ -262,6 +355,11 @@ export function verifyKnowledgeSchema(): { ok: boolean; checks: SchemaCheck[] } 
       ? mysqlColumnExists(table, column)
       : sqliteColumns(table).includes(column);
     checks.push({ target: `${table}.${column}`, kind: 'column', present });
+  }
+
+  for (const table of REQUIRED_TABLES) {
+    const present = isMysql ? mysqlTableExists(table) : sqliteTableExists(table);
+    checks.push({ target: table, kind: 'table', present });
   }
 
   // 顺带确认「不该存在」的错列名真的没被误建

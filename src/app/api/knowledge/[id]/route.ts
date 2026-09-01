@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
+import { canReadCategory, canWriteCategory } from '@/lib/knowledge-acl';
 
 // GET: single knowledge entry detail
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +24,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   `).get(parseInt(id))) as any;
 
   if (!entry) return NextResponse.json({ error: '知识条目不存在' }, { status: 404 });
+
+  // 分类级读权限（P2）。注意返 404 而不是 403：
+  // 受限分类下有哪些条目本身就是敏感信息，403 等于确认存在。
+  if (!canReadCategory(user, entry.category_id)) {
+    return NextResponse.json({ error: '知识条目不存在' }, { status: 404 });
+  }
 
   // Increment view count
   (await db.prepare('UPDATE knowledge_entries SET view_count = view_count + 1 WHERE id = ?').run(parseInt(id)));
@@ -70,7 +77,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const existing = (await db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(parseInt(id))) as any;
   if (!existing) return NextResponse.json({ error: '知识条目不存在' }, { status: 404 });
 
-  const fields = ['title', 'question', 'answer', 'category', 'type', 'status', 'confidence'];
+  // 改前改后的分类都要有写权，否则可以把条目搬出/搬进受限分类绕过 ACL（P2）
+  if (!canWriteCategory(user, existing.category_id)) {
+    return NextResponse.json({ error: '无权修改该分类下的知识' }, { status: 403 });
+  }
+  if (body.category_id !== undefined && !canWriteCategory(user, body.category_id)) {
+    return NextResponse.json({ error: '无权将知识移入目标分类' }, { status: 403 });
+  }
+
+  const fields = ['title', 'question', 'answer', 'category', 'category_id', 'type', 'status', 'confidence'];
   const updates: string[] = [];
   const values: any[] = [];
 
@@ -104,6 +119,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!/^\d+$/.test(id)) return NextResponse.json({ error: '无效的ID' }, { status: 400 });
   ensureKnowledgeTables();
   const db = getAsyncDb();
+
+  // 删除同样要校写权（P2）
+  const target = (await db.prepare('SELECT category_id FROM knowledge_entries WHERE id = ?').get(parseInt(id))) as any;
+  if (!target) return NextResponse.json({ error: '知识条目不存在' }, { status: 404 });
+  if (!canWriteCategory(user, target.category_id)) {
+    return NextResponse.json({ error: '无权删除该分类下的知识' }, { status: 403 });
+  }
 
   (await db.prepare('DELETE FROM knowledge_feedback WHERE entry_id = ?').run(parseInt(id)));
   (await db.prepare('DELETE FROM knowledge_relations WHERE source_id = ? OR target_id = ?').run(parseInt(id), parseInt(id)));

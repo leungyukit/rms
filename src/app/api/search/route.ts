@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb, isMysqlEnabled } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { ensureFtsIndexes, highlight, escapeFts } from '@/lib/fts-migrations';
+import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
+import { buildKnowledgeReadFilter } from '@/lib/knowledge-acl';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   ensureFtsIndexes();
+  ensureKnowledgeTables();
 
   const sp = req.nextUrl.searchParams;
   const q = (sp.get('q') || sp.get('keyword') || '').trim();
@@ -47,6 +50,13 @@ export async function GET(req: NextRequest) {
 
   const safeQ = escapeFts(q);
   const likeQ = `%${q}%`;
+
+  // 分类级读权限（P2）。搜索是最容易漏的出口 —— 只挡列表页不挡搜索等于没挡。
+  // 两个别名各算一次：MySQL 分支裸表无别名，SQLite 分支 JOIN 后用 k。
+  const acl = buildKnowledgeReadFilter(user, '');
+  const aclSql = acl.sql ? ` AND ${acl.sql}` : '';
+  const aclK = buildKnowledgeReadFilter(user, 'k');
+  const aclKSql = aclK.sql ? ` AND ${aclK.sql}` : '';
 
   // 需求搜索
   if (type === 'all' || type === 'requirements') {
@@ -119,15 +129,15 @@ export async function GET(req: NextRequest) {
         rows = (await db.prepare(`
           SELECT id, title, answer, category, tags, MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE) as score
           FROM knowledge_entries
-          WHERE status='published' AND MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE)
+          WHERE status='published' AND MATCH(title, question, answer, category, tags) AGAINST (? IN NATURAL LANGUAGE MODE)${aclSql}
           ORDER BY score DESC LIMIT ?
-        `).all(q, q, limit)) as any[];
+        `).all(q, q, ...acl.params, limit)) as any[];
       } catch (e) {
         rows = (await db.prepare(`
           SELECT id, title, answer, category, tags, 1 as score
-          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)
+          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)${aclSql}
           LIMIT ?
-        `).all(likeQ, likeQ, limit)) as any[];
+        `).all(likeQ, likeQ, ...acl.params, limit)) as any[];
       }
     } else {
       try {
@@ -135,16 +145,16 @@ export async function GET(req: NextRequest) {
           SELECT id, title, answer, category, tags, rank
           FROM knowledge_entries_fts fts
           JOIN knowledge_entries k ON k.id=fts.rowid
-          WHERE knowledge_entries_fts MATCH ? AND k.status='published'
+          WHERE knowledge_entries_fts MATCH ? AND k.status='published'${aclKSql}
           ORDER BY rank LIMIT ?
-        `).all(safeQ, limit)) as any[];
+        `).all(safeQ, ...aclK.params, limit)) as any[];
         for (const r of rows) r.score = 1 / (1 + Math.abs(r.rank));
       } catch (e) {
         rows = (await db.prepare(`
           SELECT id, title, answer, category, tags, 1 as score
-          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)
+          FROM knowledge_entries WHERE status='published' AND (title LIKE ? OR answer LIKE ?)${aclSql}
           LIMIT ?
-        `).all(likeQ, likeQ, limit)) as any[];
+        `).all(likeQ, likeQ, ...acl.params, limit)) as any[];
       }
     }
     for (const r of dropWeakHits(rows).slice(0, limit)) {

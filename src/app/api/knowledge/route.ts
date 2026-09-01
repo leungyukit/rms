@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser, hasFunctionalAccess } from '@/lib/auth';
 import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
+import { buildKnowledgeReadFilter, canWriteCategory } from '@/lib/knowledge-acl';
 
 // GET: list/search knowledge entries
 export async function GET(req: NextRequest) {
@@ -28,6 +29,11 @@ export async function GET(req: NextRequest) {
   if (status) { where.push('ke.status = ?'); params.push(status); }
   if (category) { where.push('ke.category = ?'); params.push(category); }
   if (sourceId) { where.push('ke.source_requirement_id = ?'); params.push(parseInt(sourceId)); }
+
+  // 分类级读权限（P2）—— 改造前拿到功能权限就能看全部知识
+  const aclFilter = buildKnowledgeReadFilter(user, 'ke');
+  if (aclFilter.sql) { where.push(aclFilter.sql); params.push(...aclFilter.params); }
+
   if (keyword) {
     where.push('(ke.title LIKE ? OR ke.question LIKE ? OR ke.answer LIKE ?)');
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
@@ -62,17 +68,24 @@ export async function POST(req: NextRequest) {
   if (!hasFunctionalAccess(user.roles)) return NextResponse.json({ error: '无功能权限' }, { status: 403 });
 
   const body = await req.json();
-  const { source_requirement_id, type, title, question, answer, category, tags, confidence, status } = body;
+  const { source_requirement_id, type, title, question, answer, category, category_id, tags, confidence, status } = body;
 
   if (!title || !question || !answer) {
     return NextResponse.json({ error: 'title、question、answer 为必填项' }, { status: 400 });
   }
 
   ensureKnowledgeTables();
+
+  // 受限分类需显式写权限（P2）
+  const targetCategoryId = category_id != null ? parseInt(String(category_id)) : null;
+  if (!canWriteCategory(user, targetCategoryId)) {
+    return NextResponse.json({ error: '无权在该分类下创建知识' }, { status: 403 });
+  }
+
   const db = getAsyncDb();
   const result = (await db.prepare(`
-    INSERT INTO knowledge_entries (source_requirement_id, type, title, question, answer, category, tags, confidence, status, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO knowledge_entries (source_requirement_id, type, title, question, answer, category, category_id, tags, confidence, status, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     source_requirement_id || null,
     type || 'faq',
@@ -80,6 +93,7 @@ export async function POST(req: NextRequest) {
     question,
     answer,
     category || '',
+    targetCategoryId,
     JSON.stringify(tags || []),
     confidence || 0.8,
     status || 'published',

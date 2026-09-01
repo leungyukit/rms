@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAsyncDb } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { ensureKnowledgeTables } from '@/lib/knowledge-migrations';
+import { buildKnowledgeReadFilter } from '@/lib/knowledge-acl';
 
 // GET: graph data for visualization
 export async function GET(req: NextRequest) {
@@ -10,6 +12,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const scope = searchParams.get('scope');
 
+  ensureKnowledgeTables();
   const db = getAsyncDb();
   const nodes: any[] = [];
   const edges: any[] = [];
@@ -85,10 +88,13 @@ export async function GET(req: NextRequest) {
   }
 
   // Knowledge entries
+  // 分类级读权限（P2）—— 图谱也是泄露面：节点标题直接画在图上，
+  // 不挡的话受限知识的标题和关系拓扑会整个露出来。
+  const acl = buildKnowledgeReadFilter(user, 'ke');
   const entries = (await db.prepare(`
     SELECT ke.id, ke.title, ke.type, ke.source_requirement_id, ke.category
-    FROM knowledge_entries ke WHERE ke.status = 'published'
-  `).all()) as any[];
+    FROM knowledge_entries ke WHERE ke.status = 'published'${acl.sql ? ` AND ${acl.sql}` : ''}
+  `).all(...acl.params)) as any[];
   for (const e of entries) {
     addNode(`ke_${e.id}`, 'knowledge', e.title, { knowledgeType: e.type, category: e.category });
     if (e.source_requirement_id && nodeSet.has(`req_${e.source_requirement_id}`)) {

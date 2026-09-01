@@ -63,6 +63,8 @@ const COLUMNS = [
   ['knowledge_entries', 'reviewed_at', 'DATETIME NULL'],
   // 详情页 ORDER BY kr.weight 而表里没这列
   ['knowledge_relations', 'weight', 'DOUBLE NOT NULL DEFAULT 1.0'],
+  // P2：知识条目挂到分类树；老 category 字符串列保留只读兼容，不删
+  ['knowledge_entries', 'category_id', 'INT NULL'],
 ];
 
 /** 要改名的列：[表, 旧名, 新名, 定义] */
@@ -81,6 +83,44 @@ const INDEXES = [
   ['knowledge_entries', 'idx_ke_category', 'category'],
   ['knowledge_entries', 'idx_ke_freshness', 'freshness_status, next_review_at'],
   ['knowledge_entries', 'idx_ke_ai_review', 'ai_generated, status'],
+  ['knowledge_entries', 'idx_ke_category_id', 'category_id'],
+];
+
+/**
+ * P2 分类树 + 分类级 ACL 建表。
+ *
+ * path 存物料路径（/1/4/9/）以便按子树查询，不用递归 CTE（兼容 MySQL 5.7）。
+ * is_restricted=1 的分类才需要显式 ACL 授权，取舍详见 src/lib/knowledge-acl.ts。
+ */
+const TABLES = [
+  ['knowledge_categories', `
+    CREATE TABLE knowledge_categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      parent_id INT NULL,
+      path VARCHAR(500) NOT NULL DEFAULT '/',
+      description TEXT,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_restricted TINYINT NOT NULL DEFAULT 0,
+      created_by INT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_kc_parent (parent_id),
+      KEY idx_kc_path (path),
+      KEY idx_kc_restricted (is_restricted)
+    )`],
+  ['knowledge_category_acl', `
+    CREATE TABLE knowledge_category_acl (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      category_id INT NOT NULL,
+      role_name VARCHAR(50) NOT NULL,
+      can_read TINYINT NOT NULL DEFAULT 1,
+      can_write TINYINT NOT NULL DEFAULT 0,
+      can_manage TINYINT NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_kca (category_id, role_name),
+      KEY idx_kca_role (role_name, can_read)
+    )`],
 ];
 
 const conn = await mysql.createConnection(cfg);
@@ -105,6 +145,15 @@ async function hasIndex(table, index) {
   return Number(rows[0].cnt) > 0;
 }
 
+async function hasTable(table) {
+  const [rows] = await conn.execute(
+    `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+    [cfg.database, table]
+  );
+  return Number(rows[0].cnt) > 0;
+}
+
 async function run(label, sql) {
   if (DRY_RUN) {
     applied.push(`[dry-run] ${label}`);
@@ -115,6 +164,12 @@ async function run(label, sql) {
 }
 
 try {
+  // 0. 建表（先做，后面的加列/索引依赖它）
+  for (const [table, ddl] of TABLES) {
+    if (await hasTable(table)) { skipped.push(`${table} 表已存在`); continue; }
+    await run(`CREATE TABLE ${table}`, ddl);
+  }
+
   // 1. 改列名（先做，后面的索引依赖新列名）
   for (const [table, from, to, def] of RENAMES) {
     const hasOld = await hasColumn(table, from);
@@ -144,6 +199,10 @@ try {
   // 4. 自检
   console.log('\n=== 自检 ===');
   let bad = 0;
+  for (const [table] of TABLES) {
+    const ok = await hasTable(table);
+    if (!ok) { bad++; console.log('  ✗ 缺失表', table); }
+  }
   for (const [table, column] of [...COLUMNS.map(c => [c[0], c[1]]), ['knowledge_feedback', 'entry_id']]) {
     const ok = await hasColumn(table, column);
     if (!ok) { bad++; console.log('  ✗ 缺失', `${table}.${column}`); }
