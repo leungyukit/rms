@@ -40,7 +40,10 @@ export default function NotificationsPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [detailModal, setDetailModal] = useState<Notification | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,7 +60,6 @@ export default function NotificationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleClick = async (n: Notification) => {
-    // 标记已读
     if (!n.is_read) {
       try {
         await fetch('/api/notifications', {
@@ -69,8 +71,12 @@ export default function NotificationsPage() {
         setUnreadCount(c => Math.max(0, c - 1));
       } catch {}
     }
-    // 跳转
     if (n.link) router.push(n.link);
+  };
+
+  const openDetail = (n: Notification, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDetailModal(n);
   };
 
   const markAllRead = async () => {
@@ -105,6 +111,32 @@ export default function NotificationsPage() {
     setBusy(false);
   };
 
+  const batchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`确定删除 ${selectedIds.size} 条通知？`)) return;
+    setBusy(true);
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id =>
+          fetch(`/api/notifications?id=${id}`, { method: 'DELETE', credentials: 'include' })
+        )
+      );
+      setSelectedIds(new Set());
+      await load();
+    } catch {}
+    setBusy(false);
+  };
+
+  const toggleSelect = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="page-header flex items-center justify-between">
@@ -137,8 +169,8 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {/* 过滤 Tab */}
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
+      {/* 过滤 + 批量操作栏 */}
+      <div className="flex flex-wrap items-center gap-2 mb-4 border-b border-gray-200 pb-1">
         {(['all', 'unread'] as const).map(f => (
           <button
             key={f}
@@ -152,6 +184,27 @@ export default function NotificationsPage() {
             {f === 'all' ? `全部 (${list.length})` : `未读 (${unreadCount})`}
           </button>
         ))}
+        <div className="ml-auto flex gap-1">
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            className="text-xs border rounded px-2 py-1 bg-white"
+          >
+            <option value="all">全部类型</option>
+            {Object.entries(TYPE_META).map(([k, v]) => (
+              <option key={k} value={k}>{v.icon} {v.label}</option>
+            ))}
+          </select>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={batchDelete}
+              disabled={busy}
+              className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-40"
+            >
+              删除 {selectedIds.size} 条
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -163,7 +216,9 @@ export default function NotificationsPage() {
         </div></div>
       ) : (
         <div className="space-y-2">
-          {list.map(n => {
+          {list
+            .filter(n => typeFilter === 'all' || n.type === typeFilter)
+            .map(n => {
             const meta = TYPE_META[n.type] || DEFAULT_META;
             const isUnread = !n.is_read;
             return (
@@ -175,10 +230,25 @@ export default function NotificationsPage() {
                 } ${meta.bg}`}
               >
                 <div className="flex items-start gap-3">
+                  {/* 多选复选框 */}
+                  <div className="pt-1" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(n.id)}
+                      onChange={() => {}}
+                      onClick={(e) => toggleSelect(n.id, e)}
+                      className="w-4 h-4 rounded border-gray-300"
+                    />
+                  </div>
                   <div className="text-2xl shrink-0">{meta.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 mb-1">
-                      <h3 className={`text-sm font-medium truncate ${isUnread ? 'text-gray-900' : 'text-gray-600'}`}>
+                      <h3
+                        onClick={(e) => openDetail(n, e)}
+                        className={`text-sm font-medium truncate cursor-pointer hover:underline ${
+                          isUnread ? 'text-gray-900' : 'text-gray-600'
+                        }`}
+                      >
                         {n.title}
                       </h3>
                       {isUnread && <span className="w-2 h-2 bg-gray-800 rounded-full shrink-0" />}
@@ -205,6 +275,30 @@ export default function NotificationsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 详情弹窗 */}
+      {detailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setDetailModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold">{detailModal.title}</h2>
+                <span className="text-xs text-gray-500">{detailModal.created_at}</span>
+              </div>
+              <button onClick={() => setDetailModal(null)} className="text-gray-400 hover:text-gray-700 text-xl">×</button>
+            </div>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4">{detailModal.content || '（无详情）'}</div>
+            <div className="flex gap-2">
+              {detailModal.link && (
+                <button onClick={() => { setDetailModal(null); router.push(detailModal.link!); }} className="btn btn-primary">
+                  查看详情 →
+                </button>
+              )}
+              <button onClick={() => setDetailModal(null)} className="btn btn-secondary">关闭</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
