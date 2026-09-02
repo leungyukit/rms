@@ -66,8 +66,23 @@ export async function POST(req: NextRequest) {
   const db = getAsyncDb();
   const msg = lastUserMsg.trim().toLowerCase();
 
+  // Agent 模式不该走到这里 —— 它必须打 /api/openclaw。
+  //
+  // 2026-09-02 修复：原条件是 `mode === 'ai' || mode === 'agent'`，把 Agent 请求
+  // 当 AI 处理，走关键词/LLM 导航匹配。于是「某人有多少需求未完成？」这类
+  // 数据查询既匹配不到导航目标，LLM 又被 navPrompt 逼着输出导航 JSON，
+  // 最终回落到下面那句「我没有理解您的意思」——用户以为 Agent 坏了，
+  // 实际上请求从未离开这个文件。
+  //
+  // 现在显式拒绕并说明原因，而不是静默走错分支。静默降级比报错更难查。
+  if (mode === 'agent') {
+    return NextResponse.json({
+      error: 'Agent 模式请调用 /api/openclaw（action=chat），本接口不处理 Agent 请求。',
+    }, { status: 400 });
+  }
+
   // AI mode - use LLM or enhanced navigation
-  if (mode === 'ai' || mode === 'agent') {
+  if (mode === 'ai') {
     const config = await getLLMConfig();
 
     // Get current user message - frontend sends messages array

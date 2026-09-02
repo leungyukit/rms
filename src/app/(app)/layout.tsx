@@ -191,6 +191,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sectionState, setSectionState] = useState<SectionState>(SECTIONS);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMode, setChatMode] = useState<'basic' | 'ai' | 'agent'>('basic');
+  // Agent 模式需要先向 /api/openclaw 拿到会话（enable），否则 chat 会被拒 400
+  const [openclawReady, setOpenclawReady] = useState(false);
+  const [openclawEnabling, setOpenclawEnabling] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -324,51 +327,108 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setInput('');
     setLoading(true);
 
-    // 先检查是否是直接导航命令
-    const cmd = handleCommand(userMsg.content);
-    if (cmd.matched) {
-      setMessages(prev => [...prev, { role: 'assistant', content: cmd.response }]);
-      setLoading(false);
-      return;
+    // 本地导航快捷命令：Agent 模式下跳过 —— 该模式的全部意图都应交给 Agent，
+    // 否则「OpenClaw」这类词会被本地正则截走，永远到不了 Gateway。
+    if (chatMode !== 'agent') {
+      const cmd = handleCommand(userMsg.content);
+      if (cmd.matched) {
+        setMessages(prev => [...prev, { role: 'assistant', content: cmd.response }]);
+        setLoading(false);
+        return;
+      }
     }
 
     try {
-      // 在 AI 模式下，发送带导航提示的消息给 LLM
-      const isAIMode = chatMode === 'ai';
-      let messagesToSend = [...messages, userMsg];
+      // ── 按模式分派（2026-09-02 修复）────────────────────────────────
+      // 原实现三个模式全打 /api/chat 且只在 body 带 mode，导致：
+      //   1. Agent 模式压根没碰过 /api/openclaw，模式 tab 形同摆设
+      //   2. /api/chat 把 agent 当 ai 处理，走关键词/LLM 导航匹配，
+      //      于是「霍广汉有多少需求未完成？」撞上「我没有理解您的意思」
+      // 现与 /chat 独立页面的分派逻辑保持一致。
 
-      if (isAIMode) {
-        // 构建带导航意图提示的系统消息
-        const navPrompt = { role: 'system', content: NAVIGATION_PROMPT };
-        messagesToSend = [navPrompt, ...messages, userMsg];
+      if (chatMode === 'agent') {
+        const ready = openclawReady || (await ensureOpenClaw());
+        if (!ready) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: '⚠️ 无法启用 OpenClaw，请检查高级配置中的 Gateway 地址和 Token 是否正确，以及 OpenClaw Gateway 是否已启动。',
+          }]);
+          setLoading(false);
+          return;
+        }
+        const res = await fetch('/api/openclaw', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'chat', message: userMsg.content }),
+          credentials: 'include',
+        });
+        const raw = await res.text().catch(() => '');
+        const data = raw ? JSON.parse(raw) : {};
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: res.ok
+            ? (data.text || data.reply || '(Agent 未返回内容)')
+            : (data.error || 'OpenClaw 调用失败'),
+        }]);
+        setLoading(false);
+        return;
       }
 
+      if (chatMode === 'ai') {
+        // 走带知识库检索的 LLM 接口，与 /chat 页面一致
+        const res = await fetch('/api/chat/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userMsg.content,
+            history: messages
+              .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
+              .filter(m => m.content),
+          }),
+          credentials: 'include',
+        });
+        const raw = await res.text().catch(() => '');
+        const data = raw ? JSON.parse(raw) : {};
+        const reply = res.ok
+          ? (data.reply || data.text || '无响应')
+          : (data.error || 'LLM 调用失败');
+        // LLM 可能返回导航意图 JSON，沿用既有解析
+        const nav = parseLLMNavigation(reply);
+        if (nav.matched && nav.target && nav.target !== '/chat') {
+          setMessages(prev => [...prev, { role: 'assistant', content: nav.message || '正在跳转...' }]);
+          setChatOpen(false);
+          setTimeout(() => router.push(nav.target!), 300);
+          setLoading(false);
+          return;
+        }
+        setMessages(prev => [...prev, { role: 'assistant', content: nav.matched ? (nav.message || reply) : reply }]);
+        setLoading(false);
+        return;
+      }
+
+      // basic：原有关键词/自然语言导航后端
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: messagesToSend, mode: chatMode }),
+        body: JSON.stringify({ messages: [...messages, userMsg], mode: 'basic' }),
+        credentials: 'include',
       });
       const data = await res.json();
 
-      // 检查 API 返回是否包含导航意图（所有模式都支持）
-      // 优先检查 data.url（API 直接返回的导航路径）
       if (data.type === 'navigate' && data.url) {
-        // 如果导航目标是当前聊天页面本身，不跳转，直接把回复当普通消息显示
+        // 导航目标就是本页时不跳转，直接把回复当普通消息显示
         if (data.url === '/chat') {
           setMessages(prev => [...prev, { role: 'assistant', content: data.text || '无响应' }]);
           setLoading(false);
           return;
         }
-        // 显示消息
         setMessages(prev => [...prev, { role: 'assistant', content: data.text || '正在跳转...' }]);
-        // 执行导航
         setChatOpen(false);
         setTimeout(() => router.push(data.url), 300);
         setLoading(false);
         return;
       }
 
-      // 如果没有导航意图，显示普通回复
       setMessages(prev => [...prev, { role: 'assistant', content: data.text || data.reply || data.error || '无响应' }]);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '请求失败' }]);
@@ -471,6 +531,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const switchMode = (mode: 'basic' | 'ai' | 'agent') => {
     setChatMode(mode);
     setMessages([]);
+    // 切回 Agent 时重新握手 —— 会话可能已在服务端被禁用/过期
+    if (mode === 'agent') setOpenclawReady(false);
+  };
+
+  /**
+   * 确保 OpenClaw 会话已启用。
+   * 返回值而不是依赖 openclawReady —— setState 不同步，
+   * 同一个闭包里读到的还是旧值（chat/page.tsx 里已有这个坑的注释）。
+   */
+  const ensureOpenClaw = async (): Promise<boolean> => {
+    if (openclawReady) return true;
+    if (openclawEnabling) return false;
+    setOpenclawEnabling(true);
+    try {
+      const res = await fetch('/api/openclaw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'enable' }),
+        credentials: 'include',
+      });
+      const raw = await res.text().catch(() => '');
+      const data = raw ? JSON.parse(raw) : {};
+      if (res.ok && data.success) {
+        setOpenclawReady(true);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setOpenclawEnabling(false);
+    }
   };
 
   // LLM 导航意图解析
