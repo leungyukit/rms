@@ -184,12 +184,10 @@ export default function AdminConfigPage() {
               const changed = items.some(c => values[c.key] !== c.value);
               return (
                 <button key={cat} onClick={() => setActiveTab(cat)}
-                  className={`sidebar-link text-xs transition-all flex items-center gap-2 ${
-                    activeTab === cat ? 'active' : ''
-                  }`}>
+                  className={`card-tab ${activeTab === cat ? 'active' : ''}`}>
                   <span>{info.icon}</span>
                   <span className="flex-1">{info.label}</span>
-                  {changed && <span className="w-2 h-2 rounded-full bg-gray-800" />}
+                  {changed && <span className="card-tab-dot" title="有未保存的改动" />}
                 </button>
               );
             })}
@@ -203,12 +201,10 @@ export default function AdminConfigPage() {
               const changed = items.some(c => values[c.key] !== c.value);
               return (
                 <button key={cat} onClick={() => setActiveTab(cat)}
-                  className={`sidebar-link text-xs transition-all flex items-center gap-2 ${
-                    activeTab === cat ? 'active' : ''
-                  }`}>
+                  className={`card-tab ${activeTab === cat ? 'active' : ''}`}>
                   <span>{info.icon}</span>
                   <span className="flex-1">{info.label}</span>
-                  {changed && <span className="w-2 h-2 rounded-full bg-gray-800" />}
+                  {changed && <span className="card-tab-dot" title="有未保存的改动" />}
                 </button>
               );
             })}

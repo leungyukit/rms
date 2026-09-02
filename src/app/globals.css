@@ -220,6 +220,41 @@ body {
   .search-popup { left: 0 !important; right: 0 !important; width: 100% !important; top: 56px !important; }
 }
 
+/* ── 卡片内的竖向 tab（系统配置页等）────────────────────
+   别拿 .sidebar-link 凑：那个的 color 是 var(--sidebar-fg)（#EDEDED 近白），
+   专为深色侧边栏设计。放到白底 .card 里就是白字白底，
+   只有 .active（绿底+深色字）能看见 —— 2026-09-02 实测踩到。
+   这里颜色走 --foreground / --muted-fg 体系，深浅两个主题自动跟随。 */
+.card-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  color: var(--muted-fg);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  margin-bottom: 2px;
+  transition: background-color 0.15s, color 0.15s;
+}
+.card-tab:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.card-tab.active {
+  background: var(--primary-c);
+  color: var(--primary-fg);
+  font-weight: 600;
+}
+/* 「有未保存改动」的小圆点：选中态在绿底上要变色，不然深色点贴绿底看不清 */
+.card-tab-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--primary-text); flex-shrink: 0; }
+.card-tab.active .card-tab-dot { background: var(--primary-fg); }
+
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb {
   background: var(--border-c);
