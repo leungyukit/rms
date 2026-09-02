@@ -2,14 +2,46 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { toggleTheme, applyAndStore, loadThemeFromServer, resolveEffective } from '@/lib/theme';
 import { LogoutButton } from './logout-button';
 import SearchModal from '@/components/search-modal';
+import TaskToast from '@/components/task-toast';
 import { I18nProvider, LocaleSwitcher, useT } from '@/i18n/config';
 
 type SectionState = Record<string, { collapsed: boolean; label: string }>;
+
+// ── 对话工作台浮窗：可拖拽（2026-09-02）──────────────────
+// 原本是 `fixed right-0 top-0 bottom-0` 死贴右侧全高，遇到右侧有内容要看就挡路。
+// 改成自由浮窗，拖 header 就能摆到任意位置，位置存 localStorage 下次沿用。
+const CHAT_W = 420;
+const CHAT_H = 560;
+const CHAT_MARGIN = 12;
+const CHAT_POS_KEY = 'rms.chat.dialogPos';
+
+/** 窗体尺寸：小屏上自动缩，不然摆不进去 */
+function chatBoxSize() {
+  return {
+    w: Math.min(CHAT_W, window.innerWidth - CHAT_MARGIN * 2),
+    h: Math.min(CHAT_H, window.innerHeight - CHAT_MARGIN * 2),
+  };
+}
+
+/** 夹在可视区内 —— 否则能拖到屏外再也拉不回来 */
+function clampChatPos(x: number, y: number, w: number, h: number) {
+  const maxX = Math.max(CHAT_MARGIN, window.innerWidth - w - CHAT_MARGIN);
+  const maxY = Math.max(CHAT_MARGIN, window.innerHeight - h - CHAT_MARGIN);
+  return {
+    x: Math.min(Math.max(CHAT_MARGIN, x), maxX),
+    y: Math.min(Math.max(CHAT_MARGIN, y), maxY),
+  };
+}
+
+/** 默认落在右下角（跟旧行为接近，不让者熟手摹不到窗） */
+function defaultChatPos(w: number, h: number) {
+  return clampChatPos(window.innerWidth - w - 24, window.innerHeight - h - 24, w, h);
+}
 
 const SECTIONS: SectionState = {
   requirement: { collapsed: false, label: '需求' },
@@ -171,6 +203,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [searching, setSearching] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [allowedHrefs, setAllowedHrefs] = useState<Set<string> | null>(null);
+  // 浮窗位置/尺寸：null = 还没算（SSR 时拿不到 window）
+  const [chatPos, setChatPos] = useState<{ x: number; y: number } | null>(null);
+  const [chatBox, setChatBox] = useState({ w: CHAT_W, h: CHAT_H });
+  const [chatDragging, setChatDragging] = useState(false);
+  const chatDragRef = useRef<{ dx: number; dy: number } | null>(null);
 
   // 菜单权限过滤：null 表示功能未启用，显示全部；空 Set 表示显式无权限，全部隐藏
   const filterMenu = <T extends { href: string }>(items: T[]): T[] => {
@@ -344,6 +381,93 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setMessages([]);
   };
 
+  // ── 浮窗拖拽 ────────────────────────────────────
+  // 打开时算初始位置：优先用上次存的，否则默认右下角。
+  // 放在 chatOpen 变 true 时算而不是初始化时，因为 SSR 阶段没有 window。
+  useEffect(() => {
+    if (!chatOpen) return;
+    const size = chatBoxSize();
+    setChatBox(size);
+    setChatPos(prev => {
+      if (prev) return clampChatPos(prev.x, prev.y, size.w, size.h);
+      try {
+        const raw = localStorage.getItem(CHAT_POS_KEY);
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (typeof p?.x === 'number' && typeof p?.y === 'number') {
+            return clampChatPos(p.x, p.y, size.w, size.h);
+          }
+        }
+      } catch {
+        // localStorage 不可用（隐私模式/配额满）就用默认位置，不影响使用
+      }
+      return defaultChatPos(size.w, size.h);
+    });
+  }, [chatOpen]);
+
+  // 窗口缩放：重算尺寸并把窗拉回可视区，否则缩小后窗可能在屏外
+  useEffect(() => {
+    if (!chatOpen) return;
+    const onResize = () => {
+      const size = chatBoxSize();
+      setChatBox(size);
+      setChatPos(p => (p ? clampChatPos(p.x, p.y, size.w, size.h) : p));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [chatOpen]);
+
+  // 拖拽中：监听挂在 window 上，而不是窗体上 ——
+  // 鼠标快速划出窗外时仍能跟上，不会“掎”在半路。
+  useEffect(() => {
+    if (!chatDragging) return;
+    const onMove = (e: MouseEvent) => {
+      const d = chatDragRef.current;
+      if (!d) return;
+      setChatPos(clampChatPos(e.clientX - d.dx, e.clientY - d.dy, chatBox.w, chatBox.h));
+    };
+    const stop = () => {
+      setChatDragging(false);
+      chatDragRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', stop);
+    // 拖出浏览器窗口再松手，收不到 mouseup，靠这个收尾
+    window.addEventListener('blur', stop);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('blur', stop);
+    };
+  }, [chatDragging, chatBox.w, chatBox.h]);
+
+  // 位置持久化：拖完才写，避免拖动过程中高频写 localStorage
+  useEffect(() => {
+    if (chatDragging || !chatPos) return;
+    try {
+      localStorage.setItem(CHAT_POS_KEY, JSON.stringify(chatPos));
+    } catch {
+      // 写不进去不影响本次使用
+    }
+  }, [chatDragging, chatPos]);
+
+  const startChatDrag = (e: React.MouseEvent) => {
+    // 只响应左键；点 header 里的按钮（清空/关闭）不该触发拖拽
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (!chatPos) return;
+    e.preventDefault();
+    chatDragRef.current = { dx: e.clientX - chatPos.x, dy: e.clientY - chatPos.y };
+    setChatDragging(true);
+  };
+
+  /** 回归默认位置（双击 header）—— 万一拖到奇怪位置有个退路 */
+  const resetChatPos = () => {
+    const size = chatBoxSize();
+    setChatBox(size);
+    setChatPos(defaultChatPos(size.w, size.h));
+  };
+
   const switchMode = (mode: 'basic' | 'ai' | 'agent') => {
     setChatMode(mode);
     setMessages([]);
@@ -512,6 +636,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       <SearchModal />
+      {/* 右下角任务气泡：每 1 小时拉一次增量任务动态，登录后才挂 */}
+      {!!user && <TaskToast />}
       {/* Sidebar */}
       <aside
         className={`sidebar flex flex-col z-40 transition-all duration-300 ${mobileSidebarOpen ? 'open' : ''}`}
@@ -687,12 +813,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
       )}
 
-      {/* Floating chat dialog - WeChat style, right side */}
-      {chatOpen && (
-        <div className="fixed right-0 top-0 bottom-0 z-50 flex" style={{ width: '420px' }}>
-          <div className="flex-1 bg-[var(--card-bg)] flex flex-col overflow-hidden border-l border-[var(--border-c)]">
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-c)] bg-[var(--muted)] text-[var(--foreground)]">
+      {/* 浮动对话框：可拖拽，位置记忆在 localStorage */}
+      {chatOpen && chatPos && (
+        <div
+          className="fixed z-50 flex rounded-xl overflow-hidden border border-[var(--border-c)]"
+          style={{
+            left: chatPos.x,
+            top: chatPos.y,
+            width: chatBox.w,
+            height: chatBox.h,
+            boxShadow: 'var(--shadow-lg)',
+            // 拖拽中关掉过渡，否则窗体会「追着」鼠标飘
+            transition: chatDragging ? 'none' : 'box-shadow 0.15s',
+            // 拖拽中禁用选中，避免把页面文字一路刷蓝
+            userSelect: chatDragging ? 'none' : undefined,
+          }}
+        >
+          <div className="flex-1 bg-[var(--card-bg)] flex flex-col overflow-hidden">
+            {/* Header —— 同时是拖拽把手；双击回归默认位置 */}
+            <div
+              onMouseDown={startChatDrag}
+              onDoubleClick={resetChatPos}
+              title="拖动可移动窗口，双击回到默认位置"
+              style={{ cursor: chatDragging ? 'grabbing' : 'grab' }}
+              className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-c)] bg-[var(--muted)] text-[var(--foreground)] select-none">
               <div className="flex items-center gap-3">
                 <span className="text-xl">💬</span>
                 <span className="font-semibold text-base">对话工作台</span>

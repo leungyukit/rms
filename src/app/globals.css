@@ -267,6 +267,102 @@ body {
 .card-tab-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--primary-text); flex-shrink: 0; }
 .card-tab.active .card-tab-dot { background: var(--primary-fg); }
 
+/* ── 右下角任务气泡提示（2026-09-02）──────────────────────────
+   出现/隐藏都要动画。用 transform+opacity 而不是 top/right ——
+   前者走合成层，不触发 layout，动画不掉帧。 */
+@keyframes taskToastIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@keyframes taskToastOut {
+  from { opacity: 1; transform: translateY(0)    scale(1); }
+  to   { opacity: 0; transform: translateY(16px) scale(0.96); }
+}
+
+.task-toast {
+  position: fixed;
+  /* FAB 在 right-6 bottom-6（56px 直径），气泡摆它上面，别叠住 */
+  right: 1.5rem;
+  bottom: 5.75rem;
+  z-index: 45; /* FAB 是 z-40，聊天浮窗 z-50 —— 夹在中间 */
+  width: 340px;
+  max-width: calc(100vw - 3rem);
+  background: var(--card-bg);
+  color: var(--foreground);
+  border: 1px solid var(--border-c);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.task-toast-enter { animation: taskToastIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.task-toast-leave { animation: taskToastOut 280ms ease-in both; }
+
+/* 尊重系统「减少动态效果」设置（WCAG 2.3.3）——
+   不是所有人都想看东西飞进来，前庭功能障碍者会不适。 */
+@media (prefers-reduced-motion: reduce) {
+  .task-toast-enter, .task-toast-leave { animation: none; }
+  .task-toast-leave { opacity: 0; }
+}
+
+.task-toast-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.625rem 0.75rem;
+  background: var(--muted);
+  border-bottom: 1px solid var(--border-c);
+}
+.task-toast-title {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  font-size: 0.8125rem; font-weight: 600;
+}
+.task-toast-badge {
+  min-width: 1.125rem; padding: 0 0.3rem;
+  border-radius: 9999px;
+  background: var(--primary-c); color: var(--primary-fg);
+  font-size: 0.6875rem; font-weight: 700; text-align: center; line-height: 1.125rem;
+}
+.task-toast-close {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--muted-fg);
+  font-size: 1.25rem; line-height: 1; padding: 0 0.25rem;
+  border-radius: 4px;
+  transition: color 0.15s, background-color 0.15s;
+}
+.task-toast-close:hover { color: var(--foreground); background: var(--card-bg); }
+
+.task-toast-sub {
+  padding: 0.375rem 0.75rem 0;
+  font-size: 0.6875rem; color: var(--muted-fg);
+}
+.task-toast-body { padding: 0.375rem; max-height: 17rem; overflow-y: auto; }
+
+.task-toast-item {
+  display: flex; gap: 0.5rem; align-items: flex-start;
+  padding: 0.4375rem 0.5rem;
+  border-radius: 6px;
+  text-decoration: none; color: inherit;
+  transition: background-color 0.15s;
+}
+.task-toast-item:hover { background: var(--muted); }
+.task-toast-item-icon { flex-shrink: 0; font-size: 0.875rem; line-height: 1.25rem; }
+.task-toast-item-main { display: flex; flex-direction: column; min-width: 0; gap: 0.0625rem; }
+.task-toast-item-title {
+  font-size: 0.75rem; font-weight: 500; color: var(--foreground);
+  /* 标题可能很长，截断而不是撑破气泡 */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-toast-item-meta { font-size: 0.6875rem; color: var(--muted-fg); }
+.task-toast-more {
+  display: block; padding: 0.375rem 0.5rem;
+  font-size: 0.6875rem; color: var(--primary-text);
+  text-decoration: none; text-align: center;
+}
+.task-toast-more:hover { text-decoration: underline; }
+
+/* 窄屏：拉满宽度，避免在手机上挤成一条 */
+@media (max-width: 640px) {
+  .task-toast { left: 1rem; right: 1rem; width: auto; bottom: 5.25rem; }
+}
+
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb {
   background: var(--border-c);
