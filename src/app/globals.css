@@ -197,6 +197,29 @@ body {
 
 /* Scrollbar – subtle, dark */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
+/* ═══════════════════════════════════════════════════════════════
+   响应式 / 移动端
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 移动端额外滚动条美化 */
+@media (max-width: 767px) {
+  .sidebar { transform: translateX(-100%); width: 280px; z-index: 100; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+  .sidebar-overlay.open { display: block; }
+  .main-content { margin-left: 0 !important; }
+  /* 移动端顶部栏缩短 */
+  header { margin-left: 0 !important; }
+  /* 移动端隐藏带 mobile-hide 类的元素 */
+  .mobile-hide { display: none !important; }
+  /* 移动端对话抽屉改为全屏 */
+  .chat-drawer { width: 100% !important; }
+  /* 通知下拉菜单在移动端改为屏幕底部弹出 */
+  .notification-dropdown { left: 0 !important; right: 0 !important; width: 100% !important; top: 56px !important; }
+  /* 搜索弹出在移动端全宽 */
+  .search-popup { left: 0 !important; right: 0 !important; width: 100% !important; top: 56px !important; }
+}
+
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb {
   background: var(--border-c);

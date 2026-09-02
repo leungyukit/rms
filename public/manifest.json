@@ -1,0 +1,21 @@
+{
+  "name": "RMS - 用户需求管理系统",
+  "short_name": "RMS",
+  "description": "需求收集、管理、跟踪与分析",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#24B47E",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

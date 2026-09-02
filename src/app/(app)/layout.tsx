@@ -155,6 +155,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sectionState, setSectionState] = useState<SectionState>(SECTIONS);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMode, setChatMode] = useState<'basic' | 'ai' | 'agent'>('basic');
@@ -191,6 +192,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-w', sidebarCollapsed ? '64px' : '220px');
   }, [sidebarCollapsed]);
+
+  // 窗口大小变化时关闭移动端侧边栏
+  useEffect(() => {
+    const handler = () => { if (window.innerWidth >= 768) setMobileSidebarOpen(false); };
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   useEffect(() => {
     fetch('/api/auth/me', { credentials: 'include' }).then(r => {
@@ -443,15 +451,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <I18nProvider>
     <div className="min-h-screen">
       {/* Top header */}
+      {/* Mobile sidebar overlay */}
+      <div className={`sidebar-overlay ${mobileSidebarOpen ? 'open' : ''}`} onClick={() => setMobileSidebarOpen(false)} />
+
       <header className="fixed top-0 left-0 right-0 h-14 bg-[var(--card-bg)] border-b border-[var(--border-c)] flex items-center px-5 z-50 transition-all duration-300" style={{ marginLeft: sidebarCollapsed ? 80 : 220 }}>
         <Link href="/chat" className="flex items-center gap-2.5">
           <img src="/logo.png" alt="RMS Logo" className="w-8 h-8 object-contain" />
           <span className="text-base font-semibold tracking-tight text-[var(--foreground)]">需求管理系统</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
+          {/* 移动端菜单按钮 */}
+          <button
+            onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+            className="w-8 h-8 rounded-md hover:bg-[var(--muted)] flex items-center justify-center text-[var(--muted-fg)] hover:text-[var(--foreground)] transition-colors"
+            title="菜单"
+          >
+            ☰
+          </button>
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="w-8 h-8 rounded-md hover:bg-[var(--muted)] flex items-center justify-center text-[var(--muted-fg)] hover:text-[var(--foreground)] transition-colors"
+            className="w-8 h-8 rounded-md hover:bg-[var(--muted)] flex items-center justify-center text-[var(--muted-fg)] hover:text-[var(--foreground)] transition-colors mobile-hide"
             title={sidebarCollapsed ? '展开菜单' : '折叠菜单'}
           >
             {sidebarCollapsed ? '☰' : '◀'}
@@ -495,7 +514,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <SearchModal />
       {/* Sidebar */}
       <aside
-        className="sidebar flex flex-col z-40 transition-all duration-300"
+        className={`sidebar flex flex-col z-40 transition-all duration-300 ${mobileSidebarOpen ? 'open' : ''}`}
         style={{ width: sidebarCollapsed ? 80 : 220 }}
       >
         <div className="sidebar-brand" style={{ padding: sidebarCollapsed ? '0.5rem' : '1.25rem 1.25rem 1rem', gap: 0, justifyContent: 'center' }}>
@@ -561,7 +580,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Notification Dropdown */}
       {notifOpen && (
-        <div className="card w-80 fixed z-50" style={{ boxShadow: 'var(--shadow-lg)', left: sidebarCollapsed ? 80 : 220, top: 64 }}>
+        <div className="card w-80 fixed z-50 notification-dropdown" style={{ boxShadow: 'var(--shadow-lg)', left: sidebarCollapsed ? 80 : 220, top: 64 }}>
           <div className="card-header">
             <span className="card-title">通知</span>
             <button onClick={() => setNotifOpen(false)} className="sidebar-link">×</button>
@@ -587,7 +606,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Global Search Popup */}
       {searchOpen && (
-        <div className="card w-96 fixed z-50" style={{ boxShadow: 'var(--shadow-lg)', left: sidebarCollapsed ? 80 : 220, top: 64 }}>
+        <div className="card w-96 fixed z-50 search-popup" style={{ boxShadow: 'var(--shadow-lg)', left: sidebarCollapsed ? 80 : 220, top: 64 }}>
           <div className="card-header">
             <span className="card-title">搜索</span>
             <button onClick={() => setSearchOpen(false)} className="sidebar-link">×</button>
