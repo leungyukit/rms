@@ -1,66 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { OPENAPI_SPEC } from '@/lib/openapi-spec';
 
+/**
+ * OpenAPI 3.1 规范端点
+ *
+ * 2026-09-02：原来是手写的 3 个端点（requirements / projects / webhooks），
+ * 实际有 149 条路径 —— Swagger UI 上等于什么都看不到。
+ * 现改为读取 `scripts/generate-openapi.mjs` 扫描 src/app/api/ 目录后生成的
+ * `src/lib/openapi-spec.ts`。新增路由后重跑生成脚本即可，不用手抄。
+ *
+ * servers 用相对路径 `/api`，避免把开发机 localhost:3800 写死进生产文档。
+ */
 export async function GET() {
   const spec = {
-    openapi: '3.1.0',
-    info: {
-      title: 'RMS API',
-      version: '1.0.0',
-      description: '用户需求管理系统 REST API',
-    },
-    servers: [{ url: 'http://localhost:3800/api/v1', description: 'Local dev' }],
-    components: {
-      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } },
-    },
-    security: [{ bearerAuth: [] }],
-    paths: {
-      '/requirements': {
-        get: {
-          summary: '列出需求',
-          parameters: [
-            { name: 'status', in: 'query', schema: { type: 'string' } },
-            { name: 'priority', in: 'query', schema: { type: 'string', enum: ['high', 'medium', 'low'] } },
-            { name: 'project_id', in: 'query', schema: { type: 'integer' } },
-            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
-            { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 30 } },
-          ],
-          responses: { 200: { description: 'OK' } },
-        },
-        post: {
-          summary: '创建需求',
-          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
-          responses: { 201: { description: 'Created' } },
-        },
-      },
-      '/projects': {
-        get: { summary: '列出项目', responses: { 200: { description: 'OK' } } },
-      },
-      '/webhooks': {
-        get: { summary: '列出我的 Webhook 订阅', responses: { 200: { description: 'OK' } } },
-        post: {
-          summary: '创建 Webhook 订阅',
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['name', 'target_url', 'events'],
-                  properties: {
-                    name: { type: 'string' },
-                    target_url: { type: 'string', format: 'uri' },
-                    events: { type: 'array', items: { type: 'string' } },
-                    filter_project_id: { type: 'integer', nullable: true },
-                    filter_priority: { type: 'string', enum: ['high', 'medium', 'low'], nullable: true },
-                  },
-                },
-              },
-            },
-          },
-          responses: { 201: { description: 'Created (returns secret)' } },
-        },
-      },
-    },
+    ...OPENAPI_SPEC,
+    // Webhook 事件清单：生成器扫不出来（是运行时约定，不是路由），手动挂在这里
     'x-events': [
       'requirement.created',
       'requirement.updated',
