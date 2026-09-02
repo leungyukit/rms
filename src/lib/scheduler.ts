@@ -98,6 +98,7 @@ async function tickNotificationPush(now: Date): Promise<void> {
   lastNotificationPush = now.getTime();
   const { pushUnreadNotifications } = await import('./notification-push');
   const r = await pushUnreadNotifications();
+  // reason 是「前置条件没满足」的正常情况（开关关、无人绑定 IM、无候选），不打日志
   if (r.pushed > 0 || r.failed > 0) {
     // eslint-disable-next-line no-console
     console.log(`[scheduler] 通知推送: 成功=${r.pushed} 失败=${r.failed} 跳过=${r.skipped}`);

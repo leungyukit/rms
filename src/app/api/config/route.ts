@@ -50,6 +50,7 @@ const DEFAULT_CONFIGS = [
   // 通知设置
   { key: 'enable_notification', value: 'false', label: '启用通知', desc: '需求状态变更时发送通知', cat: 'notification', type: 'boolean', sort: 40 },
   { key: 'notification_email', value: '', label: '通知邮箱', desc: '系统通知发送邮箱地址', cat: 'notification', type: 'text', sort: 41 },
+  { key: 'notification_push_enabled', value: 'false', label: '推送到 IM', desc: '把站内未读通知推送到用户的飞书/企业微信/钉钉个人消息（需先配好对应应用凭据，且用户用该 IM 登录过）', cat: 'notification', type: 'boolean', sort: 42 },
 
   // OpenClaw 设置
   { key: 'openclaw_enabled', value: 'true', label: '启用 OpenClaw 集成', desc: '允许用户在对话工作台使用 OpenClaw AI Agent', cat: 'openclaw', type: 'boolean', sort: 50 },

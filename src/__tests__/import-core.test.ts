@@ -23,8 +23,11 @@ describe('escapeFormula', () => {
   });
 
   it('handles non-string values', () => {
-    expect(escapeFormula(42)).toBe(42);
-    expect(escapeFormula(null)).toBe(null);
+    // 函数签名是 (s: string)，但内部第一行就判 typeof 非 string 直接原样返回。
+    // 导入的 Excel 单元格实际会给到 number/null，这条防御必须有测试盖住，
+    // 所以用 as unknown as string 绕过编译期检查去测运行时行为。
+    expect(escapeFormula(42 as unknown as string)).toBe(42);
+    expect(escapeFormula(null as unknown as string)).toBe(null);
   });
 });
 
