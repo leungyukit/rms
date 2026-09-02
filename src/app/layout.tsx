@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // 不设 maximumScale：禁掉双指缩放是 a11y 倒退（WCAG 1.4.4），
+  // 低视力用户靠缩放看表格。初版写了 maximumScale: 1，这里改回来。
   themeColor: '#24B47E',
 };
 
