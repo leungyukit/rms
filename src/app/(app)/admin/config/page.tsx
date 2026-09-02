@@ -24,11 +24,12 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string; desc: strin
   feishu: { label: '飞书', icon: '🐦', desc: '飞书登录与同步配置' },
   dingtalk: { label: '钉钉', icon: '💬', desc: '钉钉登录与同步配置' },
   openclaw: { label: 'OpenClaw', icon: '🤖', desc: 'AI Agent 集成配置' },
+  mcp: { label: 'MCP 服务', icon: '🔌', desc: '把 RMS 数据以 MCP 协议暴露给外部客户端（默认全关）' },
   llm: { label: '大模型', icon: '🧠', desc: 'LLM 智能对话配置' },
 };
 
 const BASIC_CATEGORIES = ['general', 'auth', 'requirement', 'sla', 'display', 'notification', 'duplicate', 'estimation', 'sprint', 'ac', 'health'];
-const ADVANCED_CATEGORIES: string[] = ['database', 'memcache', 'openclaw', 'llm', 'asr_tts', 'wecom', 'feishu', 'dingtalk'];
+const ADVANCED_CATEGORIES: string[] = ['database', 'memcache', 'openclaw', 'mcp', 'llm', 'asr_tts', 'wecom', 'feishu', 'dingtalk'];
 
 const PRETTY_KEY_MAP: Record<string, string> = {
   system_name: '系统名称',

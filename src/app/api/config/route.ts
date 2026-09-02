@@ -52,6 +52,35 @@ const DEFAULT_CONFIGS = [
   { key: 'notification_email', value: '', label: '通知邮箱', desc: '系统通知发送邮箱地址', cat: 'notification', type: 'text', sort: 41 },
   { key: 'notification_push_enabled', value: 'false', label: '推送到 IM', desc: '把站内未读通知推送到用户的飞书/企业微信/钉钉个人消息（需先配好对应应用凭据，且用户用该 IM 登录过）', cat: 'notification', type: 'boolean', sort: 42 },
 
+  // MCP 服务（2026-09-02）
+  //
+  // 把 RMS 的数据能力以 MCP 协议暴露给外部客户端（Claude Desktop / Cursor / Cline 等）。
+  //
+  // ⚠️ 安全约束，改这几项前务必读懂：
+  //   1. 全部默认关闭。开 mcp_enabled 等于给需求库开了一个新的网络入口。
+  //   2. 强制 access_token 鉴权，没有「本地免鉴权」后门。权限跟着 token 属主走，
+  //      token 主人没权限动的需求，走 MCP 一样动不了。
+  //   3. 写操作（create/update）由 mcp_allow_write 单独控制，关闭时这两个 tool
+  //      **压根不注册**，而不是运行时才拒绝 —— 不给客户端「看得见但调不动」的错觉。
+  //   4. list_users / get_schema 涉及用户 PII 与表结构，归入 mcp_expose_sensitive。
+  //
+  // 传输层的两个实测结论（别再重新评估）：
+  //   1. **WebSocket 做不了**。SDK 1.29.0 的 server/ 下只有 stdio / sse /
+  //      streamableHttp / webStandardStreamableHttp，**没有 websocket**（客户端倒有
+  //      client/websocket.js）。MCP 规范本身也未定义服务端 WS。自造私有 WS 协议
+  //      会让所有标准客户端都连不上，所以不做。
+  //   2. **旧版独立 SSE transport 在 App Router 里用不了**。`SSEServerTransport`
+  //      签名吃 node:http 的 ServerResponse/IncomingMessage，而 App Router 走 Web 标准
+  //      Request/Response。所以用 WebStandardStreamableHTTPServerTransport ——
+  //      它的 handleRequest(Request): Promise<Response> 正好就是路由签名。
+  //      SSE 并没丢：Streamable HTTP 本身就用 SSE 做流式响应（mcp_transport=stream）。
+  { key: 'mcp_enabled', value: 'false', label: '启用 MCP 服务', desc: '开启后外部 MCP 客户端可通过 HTTP/SSE 访问 RMS 数据。需携带有效的 Access Token（在「个人中心 → API Token」创建）。关闭时端点直接返回 404', cat: 'mcp', type: 'boolean', sort: 120 },
+  { key: 'mcp_transport', value: 'stream', label: '响应模式', desc: 'stream = SSE 流式响应（MCP 推荐，兼容最好）；json = 单次 JSON 响应（调试友好，curl 可直读）。两者走同一个 Streamable HTTP 端点', cat: 'mcp', type: 'select:stream|SSE 流式响应 (推荐),json|单次 JSON 响应', sort: 121 },
+  { key: 'mcp_allow_write', value: 'false', label: '允许写操作', desc: '⚠️ 开启后暴露 create_requirement / update_requirement 两个工具，外部客户端可创建和修改需求。建议先只读跑一段时间再放开', cat: 'mcp', type: 'boolean', sort: 122 },
+  { key: 'mcp_expose_sensitive', value: 'false', label: '暴露用户与表结构', desc: '⚠️ 开启后暴露 list_users（含用户名/邮箱）与 get_schema（数据库表结构）两个工具', cat: 'mcp', type: 'boolean', sort: 123 },
+  { key: 'mcp_rate_limit', value: '120', label: '限流（次/分钟）', desc: '单个 Token 每分钟最多调用多少次工具，超出返回 429。设为 0 表示不限制', cat: 'mcp', type: 'number', sort: 124 },
+  { key: 'mcp_audit_log', value: 'true', label: '记录调用审计', desc: '把每次工具调用写入 audit_logs（含 token 属主、工具名、参数摘要、IP）', cat: 'mcp', type: 'boolean', sort: 125 },
+
   // OpenClaw 设置
   { key: 'openclaw_enabled', value: 'true', label: '启用 OpenClaw 集成', desc: '允许用户在对话工作台使用 OpenClaw AI Agent', cat: 'openclaw', type: 'boolean', sort: 50 },
   { key: 'openclaw_gateway_url', value: 'http://127.0.0.1:18789', label: 'Gateway 地址', desc: 'OpenClaw Gateway 的 HTTP 地址（默认本机 18789 端口）', cat: 'openclaw', type: 'text', sort: 51 },

@@ -1,4 +1,4 @@
-// 自动生成于 2026-09-02T07:06:05.642Z
+// 自动生成于 2026-09-02T08:20:17.873Z
 // 运行 `node scripts/generate-openapi.mjs` 重新生成
 export const OPENAPI_SPEC: any = {
   "openapi": "3.1.0",
@@ -4004,6 +4004,54 @@ export const OPENAPI_SPEC: any = {
           },
           "403": {
             "description": "无权限"
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "get": {
+        "summary": "GET /mcp",
+        "tags": [
+          "mcp"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "403": {
+            "description": "无权限"
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /mcp",
+        "tags": [
+          "mcp"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "403": {
+            "description": "无权限"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
           }
         }
       }
