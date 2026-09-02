@@ -26,6 +26,9 @@ let lastSlaScanDate = '';
 // 工作流监控的上次执行时间戳
 let lastWorkflowRun = 0;
 const WORKFLOW_INTERVAL_MS = 5 * 60_000; // 每 5 分钟
+// 通知推送的上次执行时间戳
+let lastNotificationPush = 0;
+const NOTIFICATION_PUSH_INTERVAL_MS = 2 * 60_000; // 每 2 分钟
 
 function localYmd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -90,6 +93,17 @@ async function tickWorkflowMonitor(now: Date): Promise<void> {
   }
 }
 
+async function tickNotificationPush(now: Date): Promise<void> {
+  if (now.getTime() - lastNotificationPush < NOTIFICATION_PUSH_INTERVAL_MS) return;
+  lastNotificationPush = now.getTime();
+  const { pushUnreadNotifications } = await import('./notification-push');
+  const r = await pushUnreadNotifications();
+  if (r.pushed > 0 || r.failed > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[scheduler] 通知推送: 成功=${r.pushed} 失败=${r.failed} 跳过=${r.skipped}`);
+  }
+}
+
 export function ensureSchedulerStarted(): void {
   if (handle || started) return;
   started = true;
@@ -105,13 +119,17 @@ export function ensureSchedulerStarted(): void {
       // eslint-disable-next-line no-console
       console.error('[scheduler] 工作流监控失败:', e?.message || e);
     });
+    void tickNotificationPush(now).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error('[scheduler] 通知推送失败:', e?.message || e);
+    });
   }, CHECK_INTERVAL_MS);
 
   // 别让定时器拖着进程不退出
   if (typeof handle.unref === 'function') handle.unref();
 
   // eslint-disable-next-line no-console
-  console.log(`[scheduler] started, check interval ${CHECK_INTERVAL_MS}ms (SLA 每日定时 / 工作流每 ${WORKFLOW_INTERVAL_MS / 60000} 分钟)`);
+  console.log(`[scheduler] started, check interval ${CHECK_INTERVAL_MS}ms (SLA 每日定时 / 工作流每 ${WORKFLOW_INTERVAL_MS / 60000} 分钟 / 通知推送每 ${NOTIFICATION_PUSH_INTERVAL_MS / 60000} 分钟)`);
 }
 
 export function stopScheduler(): void {
