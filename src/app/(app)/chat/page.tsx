@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import ChatMarkdown from '@/components/chat-markdown';
 
 interface Message {
   id: number;
@@ -20,13 +19,6 @@ interface Conversation {
   id: string;
   title: string;
   updated_at: string;
-}
-
-/** 如果整段内容被单个代码块包裹（AI 常见行为）， stripping 外层 fence */
-function unwrapSingleCodeBlock(content: string): string {
-  const trimmed = content.trim();
-  const match = trimmed.match(/^```(?:\w+)?\n([\s\S]*?)\n```$/);
-  return match ? match[1].trim() : trimmed;
 }
 
 type ChatMode = 'basic' | 'ai' | 'agent';
@@ -406,9 +398,9 @@ export default function ChatPage() {
                         </div>
                       )}
                       {m.showRaw ? (
-                        <pre className="text-sm whitespace-pre-wrap break-words font-mono bg-white/60 rounded-lg p-3 max-h-[50vh] overflow-y-auto">{unwrapSingleCodeBlock(m.content)}</pre>
+                        <pre className="text-sm whitespace-pre-wrap break-words font-mono bg-white/60 rounded-lg p-3 max-h-[50vh] overflow-y-auto">{m.content}</pre>
                       ) : (
-                        <div className="text-sm chat-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{unwrapSingleCodeBlock(m.content)}</ReactMarkdown></div>
+                        <ChatMarkdown content={m.content} />
                       )}
                       {m.knowledge_refs && m.knowledge_refs.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-gray-200">

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ChatMarkdown from '@/components/chat-markdown';
 import { toggleTheme, applyAndStore, loadThemeFromServer, resolveEffective } from '@/lib/theme';
 import { LogoutButton } from './logout-button';
 import SearchModal from '@/components/search-modal';
@@ -982,9 +982,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       : 'bg-[var(--card-bg)] text-[var(--foreground)] border-[var(--border-c)]'
                   }`}>
                     {m.role === 'assistant' ? (
-                      <div className="text-sm md-content">{m.content}</div>
+                      // compact：浮窗只有 420px 宽，表格/代码块走横向滚动而不是撑破窗体
+                      <ChatMarkdown content={m.content} compact />
                     ) : (
-                      <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+                      // 用户自己输入的原样显示，不做 Markdown 解析
+                      <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>
                     )}
                   </div>
                 </div>
