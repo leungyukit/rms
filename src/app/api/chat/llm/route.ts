@@ -924,13 +924,14 @@ async function executeTool(name: string, args: any, userId: number): Promise<any
 
   if (name === 'get_schema') {
     const table = args.table;
+    const schemaName = process.env.MYSQL_DATABASE || 'rms';
     if (!table) {
       // Return all tables
-      const tables = (await db.prepare("SELECT TABLE_NAME, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'rms'").all()) as any[];
+      const tables = (await db.prepare("SELECT TABLE_NAME, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?").all(schemaName)) as any[];
       return tables.map(t => ({ table: t.TABLE_NAME, comment: t.TABLE_COMMENT }));
     }
     // Return specific table columns
-    const cols = (await db.prepare("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'rms' AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION").all(table)) as any[];
+    const cols = (await db.prepare("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION").all(schemaName, table)) as any[];
     if (cols.length === 0) return { error: `表 '${table}' 不存在` };
     return { table, columns: cols };
   }

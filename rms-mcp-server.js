@@ -688,13 +688,16 @@ server.tool(
     }
 
     if (!args.table) {
-      const tables = query("SELECT TABLE_NAME as name, TABLE_COMMENT as comment FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'rms'");
+      const tables = query(
+        'SELECT TABLE_NAME as name, TABLE_COMMENT as comment FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+        [MYSQL_DATABASE]
+      );
       return { content: [{ type: 'text', text: JSON.stringify(tables, null, 2) }] };
     }
 
     const cols = query(
-      "SELECT COLUMN_NAME as name, COLUMN_TYPE as type, IS_NULLABLE as nullable, COLUMN_KEY as 'key', COLUMN_COMMENT as comment FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'rms' AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-      [args.table]
+      "SELECT COLUMN_NAME as name, COLUMN_TYPE as type, IS_NULLABLE as nullable, COLUMN_KEY as 'key', COLUMN_COMMENT as comment FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+      [MYSQL_DATABASE, args.table]
     );
 
     if (cols.length === 0) {
