@@ -1,9 +1,19 @@
 /**
  * 会话存储层
  * 接口兼容 Memcache（set/get/delete/keys）
- * 根据 system_config 的 memcache_enabled 动态选择后端：
- *   - true 且服务可达 → 用 Memcache 客户端
- *   - 否则 → 降级到文件存储
+ *
+ * 后端选择：启用且服务可达 → Memcache 客户端；否则降级到文件存储。
+ *
+ * 配置优先级（2026-09-03 改）：**环境变量 > system_config > 内置默认值**。
+ *
+ * 为什么改：容器化部署里 memcached 是独立容器，`system_config.memcache_host`
+ * 存的却是单机时代的 `127.0.0.1` —— 在 rms-app 容器内指向自己，11211 上什么都没有，
+ * 健康检查必然失败 → 静默降级到文件后端。compose 明明已注入正确的
+ * `MEMCACHE_HOST=memcached`，旧实现却只读 DB，等于给了正确答案没人用。
+ * （实测 63 生产：memcached 跑了 72 分钟 cmd_set=0，一个字节都没写过。）
+ *
+ * 环境变量：MEMCACHE_ENABLED / MEMCACHE_HOST / MEMCACHE_PORT / MEMCACHE_TTL_DAYS
+ * 只有环境变量**未设置**时才回落到 system_config，所以部署方式变了不用记得去改页面配置。
  */
 
 import fs from 'fs';
@@ -28,26 +38,111 @@ export interface ChatSession {
 }
 
 // ── 配置读取 ──────────────────────────────────────────────
-export async function getMemcacheConfig() {
+
+export interface MemcacheConfig {
+  enabled: boolean;
+  host?: string;
+  port?: number;
+  ttlDays?: number;
+  /** 各字段最终取自哪一层，便于排障时一眼看出是谁生效 */
+  source?: Record<'enabled' | 'host' | 'port' | 'ttlDays', 'env' | 'db' | 'default'>;
+}
+
+export const MEMCACHE_DEFAULTS = { host: '127.0.0.1', port: 11211, ttlDays: 30 } as const;
+
+/** 环境变量里「没设置」= undefined 或纯空白；空字符串不算有效值，否则会盖掉 DB 配置 */
+function envValue(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const v = raw.trim();
+  return v === '' ? undefined : v;
+}
+
+function parseBool(v: string | undefined): boolean | undefined {
+  if (v === undefined) return undefined;
+  const s = v.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(s)) return true;
+  if (['false', '0', 'no', 'off'].includes(s)) return false;
+  return undefined; // 认不出来就当没配，交给下一层
+}
+
+function parseIntOrUndefined(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  const n = Number.parseInt(v.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * 纯函数：按「环境变量 > DB > 默认值」决定最终配置。
+ * 不碰 IO，方便单测覆盖优先级规则（见 src/__tests__/memcache-config.test.ts）。
+ */
+export function resolveMemcacheConfig(
+  env: Record<string, string | undefined>,
+  dbValues: Record<string, string | undefined> = {},
+): MemcacheConfig {
+  const pick = <T>(
+    envRaw: string | undefined,
+    dbRaw: string | undefined,
+    parse: (v: string | undefined) => T | undefined,
+    fallback: T,
+  ): { value: T; from: 'env' | 'db' | 'default' } => {
+    const fromEnv = parse(envValue(envRaw));
+    if (fromEnv !== undefined) return { value: fromEnv, from: 'env' };
+    const fromDb = parse(envValue(dbRaw));
+    if (fromDb !== undefined) return { value: fromDb, from: 'db' };
+    return { value: fallback, from: 'default' };
+  };
+
+  // 默认不启用：没人明确打开就别连外部服务
+  const enabled = pick(env.MEMCACHE_ENABLED, dbValues.memcache_enabled, parseBool, false);
+  const host = pick(env.MEMCACHE_HOST, dbValues.memcache_host, (v) => v, MEMCACHE_DEFAULTS.host);
+  const port = pick(env.MEMCACHE_PORT, dbValues.memcache_port, parseIntOrUndefined, MEMCACHE_DEFAULTS.port);
+  const ttlDays = pick(env.MEMCACHE_TTL_DAYS, dbValues.memcache_ttl_days, parseIntOrUndefined, MEMCACHE_DEFAULTS.ttlDays);
+
+  const source = {
+    enabled: enabled.from,
+    host: host.from,
+    port: port.from,
+    ttlDays: ttlDays.from,
+  } as const;
+
+  if (!enabled.value) return { enabled: false, source };
+
+  return {
+    enabled: true,
+    host: host.value,
+    port: port.value,
+    ttlDays: ttlDays.value,
+    source,
+  };
+}
+
+const MEMCACHE_CONFIG_KEYS = [
+  'memcache_enabled',
+  'memcache_host',
+  'memcache_port',
+  'memcache_ttl_days',
+] as const;
+
+export async function getMemcacheConfig(): Promise<MemcacheConfig> {
+  let dbValues: Record<string, string | undefined> = {};
+
+  // DB 读失败不再直接判定「禁用」—— 环境变量已经足够决定配置，
+  // 否则一次数据库抖动就会把会话后端悄悄切走。
   try {
     const db = getAsyncDb();
-    const row = (await db.prepare("SELECT value FROM system_config WHERE `key` = 'memcache_enabled'").get()) as any;
-    const enabled = String(row?.value || 'false').toLowerCase() === 'true';
-    if (!enabled) return { enabled: false };
-
-    const hostRow = (await db.prepare("SELECT value FROM system_config WHERE `key` = 'memcache_host'").get()) as any;
-    const portRow = (await db.prepare("SELECT value FROM system_config WHERE `key` = 'memcache_port'").get()) as any;
-    const ttlRow = (await db.prepare("SELECT value FROM system_config WHERE `key` = 'memcache_ttl_days'").get()) as any;
-
-    return {
-      enabled: true,
-      host: String(hostRow?.value || '127.0.0.1'),
-      port: parseInt(String(portRow?.value || '11211'), 10),
-      ttlDays: parseInt(String(ttlRow?.value || '30'), 10),
-    };
+    const rows = (await db
+      .prepare(
+        "SELECT `key`, `value` FROM system_config WHERE `key` IN ('memcache_enabled','memcache_host','memcache_port','memcache_ttl_days')",
+      )
+      .all()) as any[];
+    for (const r of rows || []) {
+      if (MEMCACHE_CONFIG_KEYS.includes(r?.key)) dbValues[r.key] = r?.value == null ? undefined : String(r.value);
+    }
   } catch {
-    return { enabled: false };
+    dbValues = {};
   }
+
+  return resolveMemcacheConfig(process.env, dbValues);
 }
 
 // ── 文件后端（当前默认，兼容 Memcache 接口） ─────────────
@@ -201,11 +296,36 @@ const fileStore = {
 };
 
 // ── Memcache 后端（懒加载，失败降级到文件） ──────────────
+// 客户端按 host:port 归档：配置改了要能真正生效，不能一直复用指向老地址的连接。
 let memcacheClient: any = null;
-let memcacheHealthy = false;
+let memcacheClientTarget = '';
+let memcacheNextRetryAt = 0;
+
+/** 连不上时的重试冷却：否则每个请求都要等一次 TCP 超时，页面被拖死 */
+const MEMCACHE_RETRY_COOLDOWN_MS = 30_000;
+
+// 只在后端真正变化时打日志，避免每请求刷屏。
+// 这条日志正是本次 bug 的教训：旧实现静默降级，线上跑了几个月都没人发现
+// memcached 一个字节都没写过（实测 63 生产 cmd_set=0）。
+let lastLoggedBackend = '';
+function logBackendOnce(desc: string): void {
+  if (lastLoggedBackend === desc) return;
+  lastLoggedBackend = desc;
+  console.log(`[chat-store] 会话存储后端: ${desc}`);
+}
 
 async function getMemcacheClient(config: { host: string; port: number }) {
-  if (memcacheClient && memcacheHealthy) return memcacheClient;
+  const target = `${config.host}:${config.port}`;
+
+  // 目标变了（改了配置/换了部署形态）→ 丢弃旧客户端重连
+  if (memcacheClient && memcacheClientTarget !== target) {
+    try { (memcacheClient as any).end?.(); } catch { /* 关不掉就交给 GC */ }
+    memcacheClient = null;
+    memcacheNextRetryAt = 0;
+  }
+
+  if (memcacheClient) return memcacheClient;
+  if (Date.now() < memcacheNextRetryAt) return null; // 冷却中，直接走文件后端
 
   try {
     const { Memcache, createNode } = await import('memcache');
@@ -218,10 +338,14 @@ async function getMemcacheClient(config: { host: string; port: number }) {
     await client.get('__health_check__');
 
     memcacheClient = client;
-    memcacheHealthy = true;
+    memcacheClientTarget = target;
+    memcacheNextRetryAt = 0;
+    logBackendOnce(`Memcache (${target})`);
     return client;
-  } catch {
-    memcacheHealthy = false;
+  } catch (e: any) {
+    memcacheClient = null;
+    memcacheNextRetryAt = Date.now() + MEMCACHE_RETRY_COOLDOWN_MS;
+    logBackendOnce(`文件存储（Memcache ${target} 不可达：${e?.message || e}）`);
     return null;
   }
 }
@@ -235,12 +359,15 @@ export function getFileChatStore() {
 
 export async function getMemcacheChatStore() {
   const config = await getMemcacheConfig();
-  if (!config.enabled || !config.host || !config.port) return getFileChatStore();
+  if (!config.enabled || !config.host || !config.port) {
+    logBackendOnce('文件存储（Memcache 未启用）');
+    return getFileChatStore();
+  }
 
   const client = await getMemcacheClient({ host: config.host, port: config.port });
   if (!client) return getFileChatStore(); // 降级
 
-  const ttlSec = (config.ttlDays ?? 7) * 86400;
+  const ttlSec = (config.ttlDays ?? MEMCACHE_DEFAULTS.ttlDays) * 86400;
 
   return {
     async set(key: string, value: string, ttl?: number): Promise<void> {
