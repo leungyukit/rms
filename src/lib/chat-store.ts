@@ -295,6 +295,17 @@ const fileStore = {
   },
 };
 
+/**
+ * 拼接 memcache 客户端的节点 URI。
+ * IPv6 必须加方括号，否则 `::1:11211` 无法区分地址与端口。
+ */
+export function buildMemcacheNodeUri(host: string, port: number): string {
+  const h = host.trim();
+  // 已自带方括号（如 "[::1]"）直接用；裸 IPv6（含 ":"）补上方括号
+  const needsBrackets = h.includes(':') && !h.startsWith('[');
+  return `${needsBrackets ? `[${h}]` : h}:${port}`;
+}
+
 // ── Memcache 后端（懒加载，失败降级到文件） ──────────────
 // 客户端按 host:port 归档：配置改了要能真正生效，不能一直复用指向老地址的连接。
 let memcacheClient: any = null;
@@ -303,6 +314,8 @@ let memcacheNextRetryAt = 0;
 
 /** 连不上时的重试冷却：否则每个请求都要等一次 TCP 超时，页面被拖死 */
 const MEMCACHE_RETRY_COOLDOWN_MS = 30_000;
+/** 单次操作超时：会话读写卡一秒以上就不如直接走文件 */
+const MEMCACHE_TIMEOUT_MS = 2_000;
 
 // 只在后端真正变化时打日志，避免每请求刷屏。
 // 这条日志正是本次 bug 的教训：旧实现静默降级，线上跑了几个月都没人发现
@@ -315,7 +328,7 @@ function logBackendOnce(desc: string): void {
 }
 
 async function getMemcacheClient(config: { host: string; port: number }) {
-  const target = `${config.host}:${config.port}`;
+  const target = buildMemcacheNodeUri(config.host, config.port);
 
   // 目标变了（改了配置/换了部署形态）→ 丢弃旧客户端重连
   if (memcacheClient && memcacheClientTarget !== target) {
@@ -328,14 +341,26 @@ async function getMemcacheClient(config: { host: string; port: number }) {
   if (Date.now() < memcacheNextRetryAt) return null; // 冷却中，直接走文件后端
 
   try {
-    const { Memcache, createNode } = await import('memcache');
-    const client = new Memcache();
-    const node = createNode(config.host, config.port);
-    (client as any).addNode(node);
+    const { Memcache } = await import('memcache');
+
+    // ❗必须在构造时就传 nodes。
+    // `new Memcache()` 无参构造会**自建一个默认节点 localhost:11211**，
+    // 再 addNode() 只是追加第二个节点 → ketama 哈希环会把部分 key
+    // （包括健康检查那个）分到根本不存在的 localhost 上 → ECONNREFUSED。
+    // 2026-09-03 实测：new Memcache() 节点列表 = ["localhost:11211"]，
+    // addNode(createNode("memcached",11211)) 后变成两个，日志遗留矛盾现场：
+    // 「Memcache memcached:11211 不可达：ECONNREFUSED 127.0.0.1:11211」。
+    const client = new Memcache({ nodes: [target], timeout: MEMCACHE_TIMEOUT_MS });
 
     // 健康检查：用 set + get 做一次 ping（Promise API）
     await client.set('__health_check__', '1', 5);
     await client.get('__health_check__');
+
+    // 确认节点列表干净 —— 防止库升级后又冒出默认节点而无人发现
+    const ids: string[] = (client as any).nodeIds ?? [];
+    if (ids.length && !(ids.length === 1 && ids[0] === target)) {
+      throw new Error(`节点列表不纯净，期望 [${target}]，实际 [${ids.join(', ')}]`);
+    }
 
     memcacheClient = client;
     memcacheClientTarget = target;

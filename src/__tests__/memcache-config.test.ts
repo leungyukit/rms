@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMemcacheConfig, MEMCACHE_DEFAULTS } from '@/lib/chat-store';
+import { resolveMemcacheConfig, MEMCACHE_DEFAULTS, buildMemcacheNodeUri } from '@/lib/chat-store';
 
 /**
  * 这组测试的存在意义：2026-09-03 之前 chat-store 只读 system_config，
@@ -138,6 +138,29 @@ describe('resolveMemcacheConfig —— 脏值处理', () => {
   });
 });
 
+describe('buildMemcacheNodeUri —— 节点 URI 拼接', () => {
+  it('普通主机名', () => {
+    expect(buildMemcacheNodeUri('memcached', 11211)).toBe('memcached:11211');
+  });
+
+  it('IPv4', () => {
+    expect(buildMemcacheNodeUri('127.0.0.1', 11211)).toBe('127.0.0.1:11211');
+  });
+
+  it('裸 IPv6 要补方括号，否则地址与端口分不开', () => {
+    expect(buildMemcacheNodeUri('::1', 11211)).toBe('[::1]:11211');
+    expect(buildMemcacheNodeUri('2001:db8::1', 11212)).toBe('[2001:db8::1]:11212');
+  });
+
+  it('已带方括号的 IPv6 不重复加', () => {
+    expect(buildMemcacheNodeUri('[::1]', 11211)).toBe('[::1]:11211');
+  });
+
+  it('两侧空白被裁掉（否则 DNS 解析失败）', () => {
+    expect(buildMemcacheNodeUri('  memcached  ', 11211)).toBe('memcached:11211');
+  });
+});
+
 describe('resolveMemcacheConfig —— 回归：63 生产的两种真实状态', () => {
   it('修复前的状态（只有 DB 配置、host 是 127.0.0.1）仍可解析，但指向本机', () => {
     // 这是本次事故现场：解析结果本身没错，错在容器内 127.0.0.1 连不上
@@ -154,5 +177,20 @@ describe('resolveMemcacheConfig —— 回归：63 生产的两种真实状态',
     expect(cfg.host).toBe('memcached');
     // 关键：DB 里那个错值再也影响不到运行态
     expect(cfg.host).not.toBe('127.0.0.1');
+  });
+
+  it('解析结果能直接拼成干净的单节点 URI（第二个 bug 的回归）', () => {
+    // 2026-09-03 部署后发现：配置解析对了，但 new Memcache() 无参构造
+    // 会自建默认节点 localhost:11211，addNode 只是追加第二个节点，
+    // ketama 环把健康检查 key 分到不存在的 localhost 上 → ECONNREFUSED。
+    // 现在改成构造时传 nodes:[target]，所以这个 URI 必须是唯一且正确的。
+    const cfg = resolveMemcacheConfig(
+      { MEMCACHE_ENABLED: 'true', MEMCACHE_HOST: 'memcached', MEMCACHE_PORT: '11211' },
+      { memcache_host: '127.0.0.1' },
+    );
+    const uri = buildMemcacheNodeUri(cfg.host!, cfg.port!);
+    expect(uri).toBe('memcached:11211');
+    expect(uri).not.toContain('localhost');
+    expect(uri).not.toContain('127.0.0.1');
   });
 });
